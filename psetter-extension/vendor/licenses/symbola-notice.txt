@@ -1,0 +1,14 @@
+Symbola 2.52
+Unicode Fonts for Ancient Scripts; George Douros; 2009
+
+The following notice is embedded in the bundled Symbola.woff2 font metadata:
+
+Fonts in “Unicode Fonts for Ancient Scripts” are offered free for any use; they
+may be opened, edited, modified, regenerated, posted, packaged and redistributed.
+
+George Douros
+Kolokotroni 3
+Larissa 41223
+Greece
+
+Source URL embedded in the font: http://users.teilar.gr/~g1951d/

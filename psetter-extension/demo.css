@@ -1,0 +1,214 @@
+@font-face {
+  font-family: "Inter";
+  src: url("vendor/font/InterVariable.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light;
+  font-family: Inter, Arial, sans-serif;
+  background: #f4f6f9;
+  color: #172033;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.demo-shell {
+  width: min(880px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 48px 0 64px;
+}
+
+.demo-header {
+  margin-bottom: 24px;
+}
+
+.demo-brand {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.demo-brand img {
+  width: 58px;
+  height: 58px;
+  border-radius: 12px;
+}
+
+.demo-kicker,
+.demo-label {
+  margin: 0 0 5px;
+  color: rgb(232 12 12);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.09em;
+}
+
+h1,
+h2 {
+  margin: 0;
+  letter-spacing: -0.025em;
+}
+
+h1 {
+  font-size: clamp(27px, 4vw, 38px);
+}
+
+h2 {
+  font-size: 20px;
+}
+
+.demo-header > p {
+  max-width: 680px;
+  margin: 14px 0 0;
+  color: #5d6879;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.demo-card {
+  padding: 26px;
+  border: 1px solid #dce2ea;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 16px 42px rgb(15 23 42 / 8%);
+}
+
+.demo-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.demo-status {
+  border-radius: 999px;
+  padding: 6px 9px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.demo-status.is-ready {
+  background: #edf8f1;
+  color: #177245;
+}
+
+.demo-instructions {
+  margin: 15px 0 22px;
+  color: #5d6879;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.demo-problem {
+  min-height: 170px;
+}
+
+.formulaequationinput > label {
+  display: block;
+  margin-bottom: 8px;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.formulaequationinput > input {
+  width: min(100%, 620px);
+  min-height: 46px;
+}
+
+.formulaequationinput {
+  width: 100%;
+}
+
+#input_reviewer_demo {
+  width: clamp(260px, 68vw, 620px);
+  min-height: 46px;
+}
+
+.demo-examples {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+  color: #5d6879;
+  font-size: 12px;
+}
+
+.demo-examples button {
+  padding: 7px 9px;
+  border: 1px solid #bdc7d4;
+  border-radius: 7px;
+  background: #fff;
+  color: #344054;
+  cursor: pointer;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+}
+
+.demo-examples button:hover,
+.demo-examples button:focus-visible {
+  border-color: rgb(232 12 12);
+  outline: none;
+}
+
+.demo-output {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 12px 14px;
+  border: 1px solid #e3e8ef;
+  border-radius: 9px;
+  background: #f8fafc;
+  color: #5d6879;
+  font-size: 12px;
+}
+
+.demo-output code {
+  overflow-wrap: anywhere;
+  color: #172033;
+  font-family: Consolas, monospace;
+}
+
+.demo-scope-note {
+  margin: 17px 4px 0;
+  color: #687386;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+@media (max-width: 620px) {
+  .demo-shell {
+    padding-top: 24px;
+  }
+
+  .demo-card {
+    padding: 19px;
+  }
+
+  .demo-card-heading {
+    flex-direction: column;
+  }
+
+  .demo-output {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,33 @@
+name: Bug report
+description: Report a reproducible Psetter problem without sharing coursework data.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include real answers, credentials, or personal information.
+  - type: input
+    id: version
+    attributes:
+      label: Psetter version
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Use a synthetic example if an expression is needed.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true

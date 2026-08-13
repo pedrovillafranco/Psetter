@@ -1,0 +1,12 @@
+Psetter Dev: Local Installation
+
+1. From the repository root, run: pnpm extension:package:dev
+2. Open chrome://extensions in Chrome or another Chromium browser.
+3. Enable Developer mode.
+4. Choose Load unpacked.
+5. Select dist/psetter-dev.
+6. Open an MITx PSET page. An ƒx button appears beside compatible answer fields.
+
+The purple “Psetter Dev” treatment distinguishes this unpacked build from the
+production extension. It runs math conversion locally and never submits answers
+automatically.

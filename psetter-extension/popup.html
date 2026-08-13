@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src https://feedback.psetter.villafran.co;" />
+    <title>Psetter</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <header class="brand">
+        <a class="brand-link" href="https://psetter.villafran.co" target="_blank" rel="noopener noreferrer" aria-label="Visit Psetter website">
+          <div class="brand-mark">
+            <svg class="psetter-popup-mark" viewBox="0 0 1080.032 862.007" aria-hidden="true" focusable="false">
+              <path d="M 250.457 104.519 L 250.457 120.457 C 307.488 127.488 321.550 135.457 321.550 162.488 C 321.550 177.488 317.488 198.425 304.519 245.457 L 188.582 659.519 C 170.457 724.519 161.550 733.426 104.519 741.551 L 104.519 757.488 L 348.582 757.488 L 348.582 741.551 C 294.519 735.457 279.519 723.426 279.519 700.457 C 279.519 685.457 286.550 664.519 293.582 637.488 L 346.550 444.519 C 372.488 450.457 394.519 452.488 436.550 452.488 C 525.457 452.488 595.457 433.425 641.551 395.457 C 682.488 361.550 709.519 306.550 709.519 252.488 C 709.519 156.550 638.582 104.519 491.550 104.519 L 250.457 104.519 Z M 424.519 165.457 C 430.457 142.488 448.582 134.519 476.550 134.519 C 558.582 134.519 606.551 168.425 606.551 257.488 C 606.551 322.488 579.519 366.550 535.457 391.550 C 504.519 409.519 469.519 415.457 407.488 415.457 C 389.519 415.457 384.519 415.457 355.457 410.457 L 424.519 165.457 Z"/>
+              <path d="M 865.319 150.925 C 857.810 114.222 851.313 104.519 837.813 104.519 C 825.410 104.519 807.522 108.232 774.616 120.129 L 768.710 122.322 L 770.313 130.929 L 780.016 128.229 C 790.310 125.529 796.722 124.432 801.110 124.432 C 814.610 124.432 818.322 128.819 825.916 161.219 L 841.019 228.129 L 796.722 290.819 C 785.416 307.019 775.122 317.229 769.216 317.229 C 766.010 317.229 760.610 315.625 755.210 312.419 C 748.122 308.622 742.722 306.429 737.913 306.429 C 727.113 306.429 719.519 315.119 719.519 325.919 C 719.519 339.926 729.813 348.532 746.519 348.532 C 763.310 348.532 774.110 343.722 797.819 311.829 L 845.322 247.619 L 861.016 311.829 C 867.513 338.829 875.613 348.532 892.910 348.532 C 913.413 348.532 927.419 335.622 958.722 287.022 L 950.622 282.129 C 946.319 287.529 944.210 290.819 939.316 297.232 C 926.913 313.432 920.922 318.832 913.919 318.832 C 906.410 318.832 901.516 311.829 897.719 296.726 L 880.422 224.332 C 877.216 211.422 876.119 203.829 876.119 200.032 C 899.913 158.519 919.319 134.726 929.022 134.726 C 942.016 134.726 946.910 143.922 957.119 143.922 C 967.919 143.922 975.513 135.822 975.513 124.432 C 975.513 112.619 966.316 104.519 953.322 104.519 C 929.613 104.519 909.616 123.925 871.816 181.722 L 865.319 150.925 Z"/>
+            </svg>
+          </div>
+          <div class="brand-copy">
+            <h1>Psetter&trade;</h1>
+            <p>by Pedro Villafranco</p>
+          </div>
+          <span id="buildBadge" class="build-badge" hidden>DEV</span>
+        </a>
+        <div class="header-toggle">
+          <span id="enabledLabel">Off</span>
+          <label class="switch-control" aria-label="Enable Psetter on MITx">
+            <input id="enabled" type="checkbox" />
+            <span aria-hidden="true"></span>
+          </label>
+        </div>
+      </header>
+
+      <section id="remoteNotice" class="remote-notice" aria-live="polite" hidden>
+        <strong id="remoteNoticeTitle"></strong>
+        <p id="remoteNoticeMessage"></p>
+      </section>
+
+      <section id="developerMessageNotice" class="developer-message-notice" aria-live="polite" hidden>
+        <div class="developer-message-notice-copy">
+          <span class="developer-message-eyebrow">New from Psetter</span>
+          <strong id="developerMessageTeaser"></strong>
+        </div>
+        <button id="developerMessageOpen" class="developer-message-open" type="button">Read</button>
+      </section>
+
+      <section id="developerMessagePanel" class="developer-message-panel" role="dialog" aria-labelledby="developerMessageTitle" hidden>
+        <header class="developer-message-header">
+          <span class="developer-message-eyebrow">From Psetter</span>
+          <button id="developerMessageClose" class="developer-message-close" type="button" aria-label="Dismiss developer message">×</button>
+        </header>
+        <h2 id="developerMessageTitle"></h2>
+        <p id="developerMessageText"></p>
+        <p id="developerMessageSignature" class="developer-message-signature" hidden></p>
+      </section>
+
+      <section class="impact" aria-label="All-time impact">
+        <div class="impact-range" role="group" aria-label="Usage range">
+          <button class="impact-range-option is-selected" type="button" aria-pressed="true" data-range="all">All-Time</button>
+          <button class="impact-range-option" type="button" aria-pressed="false" data-range="month">Month</button>
+          <button class="impact-range-option" type="button" aria-pressed="false" data-range="week">Week</button>
+          <button class="impact-range-option" type="button" aria-pressed="false" data-range="day">Day</button>
+        </div>
+        <div class="impact-grid" aria-live="polite">
+          <div class="impact-stat">
+            <strong id="operationsCount">0</strong>
+            <span>Operations streamlined</span>
+          </div>
+          <div class="impact-stat">
+            <strong id="timeSaved">0.0 seconds</strong>
+            <span>Estimated time saved</span>
+          </div>
+        </div>
+      </section>
+
+      <details class="settings">
+        <summary>Settings</summary>
+        <!-- PSETTER_DEV_START -->
+        <div class="developer-settings" data-developer-settings>
+          <p class="settings-subheading">Developer</p>
+          <label class="switch-row compact">
+            <span>
+              <strong>Show QA Tools</strong>
+            </span>
+            <span class="switch-control" aria-label="Show QA tools">
+              <input id="devMode" type="checkbox" />
+              <span aria-hidden="true"></span>
+            </span>
+          </label>
+          <div id="devPanel" class="settings-panel" hidden>
+            <div class="settings-actions">
+              <button id="startCapture" type="button">Start Capture</button>
+              <button id="stopCapture" type="button">Stop Capture</button>
+              <button id="runScriptedQa" type="button">Run Scripted QA</button>
+              <button id="exportQaLog" type="button">Export Log</button>
+            </div>
+            <p id="devStatus" class="dev-status" aria-live="polite"></p>
+          </div>
+        </div>
+        <!-- PSETTER_DEV_END -->
+        <p class="settings-subheading">Usage</p>
+        <button id="resetUsage" class="reset-usage" type="button">
+          Reset usage stats
+        </button>
+        <p class="settings-subheading">Demo</p>
+        <button id="openDemo" class="settings-action" type="button">
+          Try Psetter locally
+        </button>
+      </details>
+
+      <footer>
+        <span>&copy; 2026 <a class="creator-link" href="https://villafran.co" target="_blank" rel="noopener noreferrer">Pedro Villafranco</a></span>
+        <nav class="footer-links" aria-label="Footer links">
+          <a href="https://psetter.villafran.co/privacy" target="_blank" rel="noopener">Privacy</a>
+          <button id="feedbackLink" type="button">Feedback</button>
+        </nav>
+      </footer>
+    </main>
+    <script src="runtime-config.js"></script>
+    <script src="remote-config.js"></script>
+    <script src="popup.js"></script>
+    <!-- PSETTER_DEV_SCRIPT_START -->
+    <script src="popup-dev.js"></script>
+    <!-- PSETTER_DEV_SCRIPT_END -->
+  </body>
+</html>

@@ -1,0 +1,6 @@
+packages:
+  - "."
+  - "psetter-extension"
+
+allowBuilds:
+  esbuild: true

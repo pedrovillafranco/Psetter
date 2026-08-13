@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src https://feedback.psetter.villafran.co; frame-src https://feedback.psetter.villafran.co; object-src 'none'; base-uri 'none'"
+    />
+    <title>Try Psetter locally</title>
+    <link rel="stylesheet" href="vendor/mathquill.css" />
+    <link rel="stylesheet" href="content-theme.css" />
+    <link rel="stylesheet" href="content.css" />
+    <link rel="stylesheet" href="demo.css" />
+  </head>
+  <body>
+    <main class="demo-shell">
+      <header class="demo-header">
+        <div class="demo-brand">
+          <img src="icons/icon128.png" alt="" />
+          <div>
+            <p class="demo-kicker">PACKAGED LOCAL DEMO</p>
+            <h1>Try Psetter without an MITx account</h1>
+          </div>
+        </div>
+        <p>
+          This page runs the same packaged editor and local conversion code used
+          on compatible MITx answer fields. It does not contact a math server.
+        </p>
+      </header>
+
+      <section class="demo-card" aria-labelledby="demoTitle">
+        <div class="demo-card-heading">
+          <div>
+            <p class="demo-label">Formula response</p>
+            <h2 id="demoTitle">Enter an expression</h2>
+          </div>
+          <span id="demoStatus" class="demo-status" role="status">Loading editor</span>
+        </div>
+
+        <p class="demo-instructions">
+          Type normally in the red field. Try a fraction, root, power, or
+          function. Psetter updates the underlying answer syntax locally.
+        </p>
+
+        <div class="problem demo-problem">
+          <div class="formulaequationinput">
+            <label for="input_reviewer_demo">Your answer</label>
+            <input
+              id="input_reviewer_demo"
+              name="input_reviewer_demo"
+              type="text"
+              autocomplete="off"
+              autofocus
+            />
+          </div>
+        </div>
+
+        <div class="demo-examples" aria-label="Example expressions">
+          <span>Examples:</span>
+          <button type="button" data-expression="sqrt(1/3)">sqrt(1/3)</button>
+          <button type="button" data-expression="3^(1/4)">3^(1/4)</button>
+          <button type="button" data-expression="cos(pi/3)">cos(pi/3)</button>
+        </div>
+
+        <div class="demo-output">
+          <span>Underlying answer value</span>
+          <code id="nativeValue">Empty</code>
+        </div>
+      </section>
+
+      <p class="demo-scope-note">
+        This demonstration is packaged inside the extension for review and
+        troubleshooting. Automatic page integration remains restricted to
+        <code>https://*.mitx.mit.edu/*</code>.
+      </p>
+    </main>
+
+    <script src="vendor/jquery.min.js"></script>
+    <script src="vendor/mathquill.min.js"></script>
+    <script src="content.js"></script>
+    <script src="demo.js"></script>
+  </body>
+</html>

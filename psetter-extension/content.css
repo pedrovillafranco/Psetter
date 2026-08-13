@@ -1,0 +1,922 @@
+.pset-math-global-toggle button,
+.pset-math-global-toggle input,
+.pset-math-global-toggle select,
+.pset-math-global-toggle textarea,
+.pset-math-details button,
+.pset-math-details input,
+.pset-math-details select,
+.pset-math-details textarea {
+  font-family: Inter, Arial, sans-serif !important;
+}
+
+.pset-math-global-controls {
+  position: fixed !important;
+  left: 14px !important;
+  bottom: 14px !important;
+  z-index: 2147483646 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.pset-math-global-toggle {
+  appearance: none !important;
+  position: static !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-height: 34px !important;
+  padding: 7px 12px !important;
+  border: 1px solid var(--psetter-border-strong) !important;
+  border-radius: 999px !important;
+  background: rgb(255 255 255 / 96%) !important;
+  color: #4b5563 !important;
+  font:
+    700 12px/1 Inter, Arial,
+    sans-serif !important;
+  cursor: pointer !important;
+  box-shadow: 0 10px 28px rgb(15 23 42 / 14%) !important;
+  backdrop-filter: blur(8px) !important;
+}
+
+.pset-math-developer-message-button {
+  appearance: none !important;
+  display: grid !important;
+  place-items: center !important;
+  width: 30px !important;
+  height: 30px !important;
+  min-width: 30px !important;
+  padding: 0 !important;
+  border: 1px solid var(--psetter-border-strong) !important;
+  border-radius: 50% !important;
+  background: rgb(255 255 255 / 96%) !important;
+  color: var(--psetter-accent) !important;
+  cursor: pointer !important;
+  box-shadow: 0 10px 28px rgb(15 23 42 / 14%) !important;
+}
+
+.pset-math-developer-message-button:hover,
+.pset-math-developer-message-button:focus-visible {
+  border-color: var(--psetter-accent) !important;
+  background: var(--psetter-accent-soft) !important;
+  outline: none !important;
+}
+
+.pset-math-developer-message-button[hidden],
+.pset-math-developer-message-panel[hidden] {
+  display: none !important;
+}
+
+.pset-math-developer-message-dot {
+  width: 9px !important;
+  height: 9px !important;
+  border-radius: 50% !important;
+  background: var(--psetter-accent) !important;
+  box-shadow: 0 0 0 4px var(--psetter-accent-soft) !important;
+}
+
+.pset-math-developer-message-panel {
+  position: fixed !important;
+  left: 14px !important;
+  bottom: 58px !important;
+  z-index: 2147483647 !important;
+  width: min(360px, calc(100vw - 28px)) !important;
+  max-height: min(320px, calc(100vh - 84px)) !important;
+  overflow: auto !important;
+  padding: 14px !important;
+  border: 1px solid var(--psetter-border-strong) !important;
+  border-radius: 12px !important;
+  background: var(--psetter-surface) !important;
+  color: var(--psetter-text) !important;
+  box-shadow: 0 18px 42px rgb(15 23 42 / 20%) !important;
+  font-family: Inter, Arial, sans-serif !important;
+}
+
+.pset-math-developer-message-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+}
+
+.pset-math-developer-message-eyebrow {
+  color: var(--psetter-accent-deep) !important;
+  font: 800 10px/1.2 Inter, Arial, sans-serif !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+}
+
+.pset-math-developer-message-title {
+  margin: 9px 0 6px !important;
+  color: var(--psetter-text) !important;
+  font: 750 16px/1.25 Inter, Arial, sans-serif !important;
+}
+
+.pset-math-developer-message-text,
+.pset-math-developer-message-signature {
+  margin: 0 !important;
+  color: var(--psetter-text-muted) !important;
+  font: 500 12px/1.5 Inter, Arial, sans-serif !important;
+  white-space: pre-wrap !important;
+}
+
+.pset-math-developer-message-signature {
+  margin-top: 10px !important;
+  color: var(--psetter-text) !important;
+  font-weight: 700 !important;
+}
+
+.pset-math-developer-message-close {
+  appearance: none !important;
+  display: grid !important;
+  place-items: center !important;
+  width: 26px !important;
+  height: 26px !important;
+  padding: 0 !important;
+  border: 1px solid var(--psetter-border) !important;
+  border-radius: 50% !important;
+  background: var(--psetter-surface-soft) !important;
+  color: var(--psetter-text-muted) !important;
+  font: 500 18px/1 Arial, sans-serif !important;
+  cursor: pointer !important;
+}
+
+.pset-math-developer-message-close:hover,
+.pset-math-developer-message-close:focus-visible {
+  border-color: var(--psetter-accent) !important;
+  color: var(--psetter-accent) !important;
+  outline: none !important;
+}
+
+
+.pset-math-global-toggle:hover,
+.pset-math-global-toggle:focus-visible {
+  border-color: var(--psetter-accent) !important;
+  background: var(--psetter-accent-soft) !important;
+  outline: none !important;
+}
+
+.pset-math-global-toggle.is-on {
+  border-color: var(--psetter-accent) !important;
+  background: var(--psetter-accent) !important;
+  color: #fff !important;
+  box-shadow: 0 12px 28px rgb(232 12 12 / 28%) !important;
+}
+
+.pset-math-global-toggle.is-off {
+  color: #000 !important;
+  background: rgb(255 255 255 / 96%) !important;
+}
+
+.pset-math-global-toggle-icon {
+  display: inline-grid !important;
+  place-items: center !important;
+  width: 16px !important;
+  height: 16px !important;
+  background: none !important;
+  font: 700 16px/1 Arial, sans-serif !important;
+  color: currentColor !important;
+}
+
+.pset-math-global-toggle-label {
+  letter-spacing: 0 !important;
+}
+
+.pset-math-remote-notice {
+  position: fixed !important;
+  left: 14px !important;
+  bottom: 58px !important;
+  z-index: 2147483646 !important;
+  width: min(360px, calc(100vw - 28px)) !important;
+  padding: 9px 11px !important;
+  border: 1px solid #bfdbfe !important;
+  border-radius: 8px !important;
+  background: #eff6ff !important;
+  color: #1e3a8a !important;
+  font: 600 11px/1.4 Inter, Arial, sans-serif !important;
+  box-shadow: 0 10px 28px rgb(15 23 42 / 14%) !important;
+}
+
+.pset-math-remote-notice.is-warning {
+  border-color: #fde68a !important;
+  background: #fffbeb !important;
+  color: #92400e !important;
+}
+
+.pset-math-remote-notice.is-error {
+  border-color: #fecaca !important;
+  background: #fef2f2 !important;
+  color: #991b1b !important;
+}
+
+.pset-math-trigger {
+  appearance: none !important;
+  display: inline-grid !important;
+  place-items: center !important;
+  width: 34px !important;
+  height: 30px !important;
+  min-width: 34px !important;
+  margin: 0 0 0 6px !important;
+  padding: 0 !important;
+  border: 1px solid var(--psetter-border-strong) !important;
+  border-radius: 6px !important;
+  background: var(--psetter-surface) !important;
+  color: var(--psetter-accent-deep) !important;
+  font:
+    700 12px/1 Inter, Arial,
+    sans-serif !important;
+  vertical-align: middle !important;
+  cursor: pointer !important;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 8%) !important;
+  position: relative !important;
+  isolation: isolate !important;
+  overflow: visible !important;
+}
+
+.pset-math-trigger[hidden] {
+  display: none !important;
+}
+
+.pset-math-restore-control {
+  appearance: none !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  position: relative !important;
+  box-sizing: border-box !important;
+  flex: 0 0 20px !important;
+  width: 22px !important;
+  height: 22px !important;
+  min-height: 22px !important;
+  min-width: 22px !important;
+  margin: 0 0 0 8px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  background: var(--psetter-accent) !important;
+  color: #ffffff !important;
+  font: 500 11px/1 Inter, Arial, sans-serif !important;
+  cursor: pointer !important;
+  box-shadow: 0 2px 6px rgb(15 23 42 / 16%) !important;
+  vertical-align: middle !important;
+  line-height: 0 !important;
+  overflow: hidden !important;
+}
+
+.pset-math-restore-control svg {
+  display: block !important;
+  width: 14px !important;
+  height: 14px !important;
+  margin: -1px 0 0 !important;
+  fill: none !important;
+  stroke: #ffffff !important;
+  stroke-width: 2.6 !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+}
+
+.pset-math-restore-control[hidden] {
+  display: none !important;
+}
+
+.pset-math-restore-control.is-visible {
+  display: inline-flex !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+
+.pset-math-restore-control:hover,
+.pset-math-restore-control:focus-visible {
+  color: #ffffff !important;
+  background: var(--psetter-accent-deep) !important;
+  outline: none !important;
+}
+
+.pset-math-restore-hint {
+  position: fixed !important;
+  z-index: 2147483647 !important;
+  width: max-content !important;
+  max-width: none !important;
+  padding: 8px 10px !important;
+  border: 1px solid rgb(232 12 12 / 20%) !important;
+  border-radius: 6px !important;
+  background: #ffffff !important;
+  color: #172033 !important;
+  font: 500 12px/1.35 Inter, Arial, sans-serif !important;
+  text-align: left !important;
+  white-space: nowrap !important;
+  box-shadow: 0 4px 10px rgb(15 23 42 / 12%) !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  transform: translateY(-100%) translateY(4px) !important;
+  transition: opacity 180ms ease, transform 180ms ease, visibility 0s linear 180ms !important;
+}
+
+.pset-math-restore-hint::after {
+  content: "" !important;
+  position: absolute !important;
+  left: 12px !important;
+  bottom: -5px !important;
+  width: 8px !important;
+  height: 8px !important;
+  border-right: 1px solid rgb(232 12 12 / 20%) !important;
+  border-bottom: 1px solid rgb(232 12 12 / 20%) !important;
+  background: #ffffff !important;
+  transform: rotate(45deg) !important;
+}
+
+.pset-math-restore-hint.is-visible {
+  opacity: 1 !important;
+  visibility: visible !important;
+  transform: translateY(-100%) translateY(0) !important;
+  transition-delay: 0s !important;
+}
+
+.pset-math-trigger:hover,
+.pset-math-trigger:focus-visible {
+  border-color: var(--psetter-accent) !important;
+  background: var(--psetter-accent-soft) !important;
+  outline: none !important;
+}
+
+.pset-math-trigger.is-open {
+  border-color: var(--psetter-accent) !important;
+  background: var(--psetter-accent) !important;
+  color: #ffffff !important;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 16%) !important;
+}
+
+.pset-math-trigger-label {
+  display: block !important;
+  width: 21px !important;
+  height: 17px !important;
+}
+
+.pset-math-trigger-label img {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  filter: brightness(0) saturate(100%) invert(13%) sepia(98%) saturate(5487%) hue-rotate(358deg) brightness(94%) contrast(96%) !important;
+}
+
+.pset-math-trigger.is-open .pset-math-trigger-label img {
+  filter: none !important;
+}
+
+.pset-math-active-field {
+  border: 2px solid var(--psetter-accent) !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.pset-math-takeover {
+  position: relative !important;
+  display: inline-block !important;
+  vertical-align: middle !important;
+  width: auto !important;
+}
+
+.pset-math-takeover:has(.pset-math-editor-surface) {
+  min-height: 44px !important;
+}
+
+.pset-math-native-covered {
+  opacity: 0 !important;
+  color: transparent !important;
+  caret-color: transparent !important;
+  pointer-events: none !important;
+}
+
+.pset-math-editor-surface {
+  display: flex !important;
+  align-items: stretch !important;
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  min-height: 100% !important;
+  border: 2px solid var(--psetter-accent) !important;
+  border-radius: 8px !important;
+  background: var(--psetter-surface) !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+  isolation: isolate !important;
+  margin: 0 !important;
+  pointer-events: auto !important;
+}
+
+.pset-math-editor-surface:focus-within {
+  border-color: var(--psetter-accent-deep) !important;
+  box-shadow: none !important;
+}
+
+.pset-math-field {
+  display: block !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  min-height: 100% !important;
+  padding: 8px 10px !important;
+  color: #171a21 !important;
+  background: #fff !important;
+  font-family: "Times New Roman", Times, serif !important;
+  font-size: 17px !important;
+  line-height: 1.35 !important;
+  overflow-x: auto !important;
+  white-space: nowrap !important;
+}
+
+.pset-math-field .mq-root-block.mq-empty::before {
+  display: inline-block !important;
+  color: #8b96a4 !important;
+  content: "Type your expression..." !important;
+  font: italic 500 15px/1.2 Inter, Arial, sans-serif !important;
+  pointer-events: none !important;
+}
+
+/* Keep MathQuill's internal boxes on its own unit line-height. The editor
+   surface can use a roomier line-height, but inheriting 1.35 into radicals,
+   fractions, and scaled delimiters makes their joins and parentheses drift.
+*/
+.pset-math-field.mq-math-mode {
+  line-height: 1 !important;
+}
+
+.pset-math-field.mq-math-mode .mq-sqrt-stem {
+  margin-left: -0.04em !important;
+  margin-top: 0 !important;
+}
+
+.pset-math-field.mq-editable-field,
+.pset-math-field .mq-editable-field {
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.pset-math-field .mq-cursor {
+  border-color: #171a21 !important;
+}
+
+.pset-math-details-slot {
+  display: block !important;
+  width: min(
+    var(--pset-math-panel-width, 460px),
+    calc(100vw - 32px)
+  ) !important;
+  max-width: 520px !important;
+  margin-top: 8px !important;
+  margin-left: 0 !important;
+}
+
+.pset-math-details {
+  position: relative !important;
+  z-index: auto !important;
+  width: 100% !important;
+  max-width: none !important;
+  margin-top: 0 !important;
+  padding: 14px 14px 14px !important;
+  border: 1px solid var(--psetter-border) !important;
+  border-radius: 12px !important;
+  background: var(--psetter-surface) !important;
+  color: var(--psetter-text) !important;
+  box-shadow: 0 12px 30px rgb(15 23 42 / 14%) !important;
+  text-align: left !important;
+  line-height: 1.35 !important;
+}
+
+.pset-math-details::before,
+.pset-math-details::after {
+  position: absolute !important;
+  left: 24px !important;
+  width: 0 !important;
+  height: 0 !important;
+  content: "" !important;
+  pointer-events: none !important;
+}
+
+.pset-math-details::before {
+  top: -9px !important;
+  border-right: 10px solid transparent !important;
+  border-bottom: 10px solid var(--psetter-border) !important;
+  border-left: 10px solid transparent !important;
+}
+
+.pset-math-details::after {
+  top: -7px !important;
+  left: 25px !important;
+  border-right: 9px solid transparent !important;
+  border-bottom: 9px solid var(--psetter-surface) !important;
+  border-left: 9px solid transparent !important;
+}
+
+.pset-math-details[hidden] {
+  display: none !important;
+}
+
+.pset-math-panel-heading {
+  display: grid !important;
+  gap: 3px !important;
+  margin-bottom: 12px !important;
+}
+
+.pset-math-panel-heading strong {
+  color: var(--psetter-text) !important;
+  font: 750 14px/1.2 Inter, Arial, sans-serif !important;
+  letter-spacing: -0.01em !important;
+}
+
+.pset-math-panel-hint {
+  color: var(--psetter-text-muted) !important;
+  font: 500 11px/1.35 Inter, Arial, sans-serif !important;
+}
+
+.pset-math-details-row,
+.pset-math-output-row,
+.pset-math-palette-header {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.pset-math-details-row {
+  justify-content: space-between !important;
+  align-items: flex-start !important;
+}
+
+.pset-math-mode-label {
+  display: flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  color: var(--psetter-text-muted) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+}
+
+.pset-math-mode-select {
+  min-height: 30px !important;
+  padding: 4px 26px 4px 8px !important;
+  border: 1px solid var(--psetter-border-strong) !important;
+  border-radius: 6px !important;
+  background: var(--psetter-surface) !important;
+  color: #202631 !important;
+  font:
+    500 12px/1.2 Inter, Arial,
+    sans-serif !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+}
+
+.pset-math-small-button {
+  appearance: none !important;
+  min-height: 29px !important;
+  padding: 4px 9px !important;
+  border: 1px solid var(--psetter-border-strong) !important;
+  border-radius: 6px !important;
+  background: var(--psetter-surface-soft) !important;
+  color: var(--psetter-accent-deep) !important;
+  font:
+    600 11px/1.2 Inter, Arial,
+    sans-serif !important;
+  cursor: pointer !important;
+}
+
+.pset-math-small-button:hover {
+  border-color: var(--psetter-accent) !important;
+  background: var(--psetter-accent-soft) !important;
+}
+
+.pset-math-output-row {
+  margin-top: 12px !important;
+  padding: 10px !important;
+  border: 1px solid var(--psetter-border) !important;
+  border-radius: 8px !important;
+  background: var(--psetter-surface-soft) !important;
+}
+
+.pset-math-output-label {
+  color: var(--psetter-text-muted) !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+}
+
+.pset-math-output-code {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  color: #182230 !important;
+  font:
+    600 12px/1.4 Inter, Arial,
+    sans-serif !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.pset-math-status {
+  display: inline-flex !important;
+  align-items: center !important;
+  min-height: 24px !important;
+  margin-top: 8px !important;
+  padding: 3px 8px !important;
+  border-radius: 999px !important;
+  background: #edf8f1 !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+}
+.pset-math-status.ready {
+  color: #177245 !important;
+}
+.pset-math-status.warning {
+  color: #9a5d00 !important;
+  background: #fff7df !important;
+}
+.pset-math-status.error {
+  color: var(--psetter-accent) !important;
+  background: var(--psetter-accent-soft) !important;
+}
+
+.pset-math-message-list {
+  margin: 6px 0 0 18px !important;
+  padding: 0 !important;
+  font-size: 11px !important;
+}
+.pset-math-warnings {
+  color: #7a4b00 !important;
+}
+.pset-math-errors {
+  color: var(--psetter-accent) !important;
+}
+
+.pset-math-nearby-symbols {
+  margin-top: 0 !important;
+  padding: 0 0 12px !important;
+  border-bottom: 1px solid var(--psetter-border) !important;
+}
+
+.pset-math-section-label,
+.pset-math-palette-header strong {
+  color: #000 !important;
+  font: 700 12px/1.2 Inter, Arial, sans-serif !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+
+.pset-math-symbol-heading {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-width: 0 !important;
+}
+
+.pset-math-symbol-toggle {
+  appearance: none !important;
+  min-width: 28px !important;
+  min-height: 28px !important;
+  padding: 2px 5px !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #202631 !important;
+  font: 500 20px/1 Inter, Arial, sans-serif !important;
+  cursor: pointer !important;
+}
+
+.pset-math-symbol-grid[hidden] {
+  display: none !important;
+}
+
+.pset-math-symbol-toggle:hover,
+.pset-math-symbol-toggle:focus-visible {
+  color: var(--psetter-accent) !important;
+}
+
+.pset-math-section-label {
+  display: block !important;
+  margin-bottom: 7px !important;
+}
+
+.pset-math-palette-header {
+  justify-content: space-between !important;
+  margin-top: 12px !important;
+  padding-top: 0 !important;
+  font:
+    700 12px/1.2 Inter, Arial,
+    sans-serif !important;
+}
+
+.pset-math-details.pset-math-no-context .pset-math-palette-header {
+  margin-top: 0 !important;
+}
+
+.pset-math-symbol-search {
+  width: 170px !important;
+  min-height: 30px !important;
+  padding: 5px 8px 5px 29px !important;
+  border: 1px solid var(--psetter-border-strong) !important;
+  border-radius: 8px !important;
+  background: var(--psetter-surface)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2374818f' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-4-4'/%3E%3C/svg%3E")
+    8px center / 14px 14px no-repeat !important;
+  color: #202631 !important;
+  font:
+    500 11px/1.2 Inter, Arial,
+    sans-serif !important;
+}
+
+.pset-math-symbol-search::placeholder {
+  color: #8b96a4 !important;
+  font-style: italic !important;
+}
+
+.pset-math-symbol-grid {
+  display: grid !important;
+  grid-template-columns: repeat(7, minmax(0, 1fr)) !important;
+  gap: 6px !important;
+  max-height: 100px !important;
+  margin-top: 9px !important;
+  overflow-y: auto !important;
+}
+
+.pset-math-symbol-grid.compact {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  max-height: none !important;
+}
+
+.pset-math-symbol-button {
+  appearance: none !important;
+  min-width: 0 !important;
+  min-height: 34px !important;
+  padding: 4px 6px !important;
+  border: 1px solid var(--psetter-border) !important;
+  border-radius: 8px !important;
+  background: var(--psetter-surface) !important;
+  color: #222a37 !important;
+  font:
+    600 15px/1.1 "Times New Roman",
+    Times,
+    serif !important;
+  cursor: pointer !important;
+}
+
+.pset-math-symbol-button:hover,
+.pset-math-symbol-button:focus-visible {
+  border-color: var(--psetter-accent) !important;
+  background: var(--psetter-accent-soft) !important;
+  outline: none !important;
+}
+
+.pset-math-brand-footer {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  min-height: 34px !important;
+  margin: 12px -14px -14px !important;
+  padding: 7px 14px !important;
+  border-radius: 0 0 12px 12px !important;
+  background: var(--psetter-accent) !important;
+  color: #fff !important;
+}
+
+.pset-math-brand-logo {
+  display: block !important;
+  width: 25px !important;
+  height: 20px !important;
+  object-fit: contain !important;
+}
+
+.pset-math-brand-name {
+  font: 700 14px/1 Inter, Arial, sans-serif !important;
+  letter-spacing: -0.01em !important;
+}
+
+.pset-math-brand-links {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  margin-left: auto !important;
+}
+
+.pset-math-brand-links a,
+.pset-math-brand-links button {
+  appearance: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #fff !important;
+  font: 500 11px/1 Inter, Arial, sans-serif !important;
+  text-decoration: underline !important;
+  text-decoration-thickness: 1px !important;
+  text-underline-offset: 2px !important;
+  cursor: pointer !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+  transform: none !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  vertical-align: baseline !important;
+}
+
+.pset-math-brand-links a:hover,
+.pset-math-brand-links a:focus-visible,
+.pset-math-brand-links button:hover,
+.pset-math-brand-links button:focus-visible {
+  color: #fff !important;
+  opacity: 0.82 !important;
+}
+
+html.pset-math-feedback-open {
+  overflow: hidden !important;
+}
+
+.pset-math-feedback-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483647 !important;
+  display: grid !important;
+  place-items: center !important;
+  padding: 20px !important;
+  background: rgb(15 23 42 / 58%) !important;
+  backdrop-filter: blur(2px) !important;
+}
+
+.pset-math-feedback-dialog {
+  position: relative !important;
+  width: min(520px, calc(100vw - 32px)) !important;
+  height: min(680px, calc(100vh - 32px)) !important;
+  overflow: hidden !important;
+  border: 1px solid rgb(255 255 255 / 32%) !important;
+  border-radius: 14px !important;
+  background: #fff !important;
+  box-shadow: 0 24px 70px rgb(15 23 42 / 34%) !important;
+}
+
+.pset-math-feedback-frame {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  border: 0 !important;
+  background: #fff !important;
+}
+
+.pset-math-feedback-close {
+  position: absolute !important;
+  top: 10px !important;
+  right: 10px !important;
+  z-index: 2 !important;
+  display: grid !important;
+  place-items: center !important;
+  width: 34px !important;
+  height: 34px !important;
+  padding: 0 !important;
+  border: 1px solid #d8dee8 !important;
+  border-radius: 999px !important;
+  background: rgb(255 255 255 / 96%) !important;
+  color: #293244 !important;
+  font: 500 24px/1 Arial, sans-serif !important;
+  box-shadow: 0 2px 10px rgb(15 23 42 / 14%) !important;
+  cursor: pointer !important;
+}
+
+.pset-math-feedback-close:hover,
+.pset-math-feedback-close:focus-visible {
+  border-color: var(--psetter-accent) !important;
+  color: var(--psetter-accent) !important;
+  outline: 3px solid var(--psetter-accent-soft) !important;
+}
+
+.pset-math-context-term {
+  font: italic 500 17px/1 "Cambria Math", Cambria, "STIX Two Math", serif !important;
+}
+
+.pset-math-context-term sub {
+  margin-left: 1px !important;
+  font-size: 0.68em !important;
+  font-style: normal !important;
+}
+
+@media (max-width: 560px) {
+  .pset-math-details-slot {
+    width: min(520px, calc(100vw - 24px)) !important;
+    max-width: none !important;
+  }
+
+  .pset-math-details {
+    width: 100% !important;
+    margin-top: 0 !important;
+    max-height: 62vh !important;
+    overflow-y: auto !important;
+  }
+
+  .pset-math-symbol-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+
+  .pset-math-symbol-search {
+    width: 52% !important;
+  }
+}

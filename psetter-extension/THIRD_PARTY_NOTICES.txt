@@ -1,0 +1,32 @@
+Psetter includes the following third-party components. Their license terms
+remain separate from Psetter's MIT license.
+
+MathQuill 0.10.1-a
+Copyright MathQuill contributors
+License: Mozilla Public License 2.0
+Note: the bundled CSS was modified to use only the WOFF2 font asset.
+Source: https://github.com/mathquill/mathquill
+
+jQuery 3.7.1
+Copyright OpenJS Foundation and other contributors
+License: MIT
+Source: https://jquery.com/
+
+CortexJS Compute Engine
+Copyright CortexJS contributors
+License: MIT
+Source: https://github.com/cortex-js/compute-engine
+
+Inter Variable 4.001
+Copyright 2016 The Inter Project Authors
+License: SIL Open Font License 1.1
+“Inter” is a Reserved Font Name and a trademark of Rasmus Andersson / rsms.
+Source: https://github.com/rsms/inter
+
+Symbola 2.52
+Copyright George Douros, 2009
+License notice embedded in the distributed font: free for any use, including
+opening, editing, modifying, regenerating, posting, packaging, and redistribution.
+Source identified in the font metadata: http://users.teilar.gr/~g1951d/
+
+Full license texts or notices are included in vendor/licenses/.

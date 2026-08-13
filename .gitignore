@@ -1,0 +1,20 @@
+Thumbs.db
+.DS_Store
+.vscode/
+node_modules/
+dist/
+build/
+*.log
+psetter-qa-*.json
+out/
+review-frames/
+.wrangler/
+*.crx
+*.zip
+.env
+.env.*
+*.pem
+*.key
+
+# One-time local public snapshots are separate repositories.
+/public-snapshot/

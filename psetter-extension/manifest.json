@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "Psetter",
+  "short_name": "Psetter",
+  "version": "0.1.0",
+  "description": "Type MITx answers with a fast intuitive math editor.",
+  "minimum_chrome_version": "120",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://*.mitx.mit.edu/*",
+    "https://feedback.psetter.villafran.co/*"
+  ],
+  "action": {
+    "default_title": "Psetter",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.mitx.mit.edu/*"],
+      "js": ["vendor/jquery.min.js", "vendor/mathquill.min.js", "content.js"],
+      "css": ["vendor/mathquill.css", "content-theme.css", "content.css"],
+      "run_at": "document_idle",
+      "all_frames": true,
+      "match_origin_as_fallback": true
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "vendor/font/*.woff2",
+        "icons/psetter-px-logo-white.svg"
+      ],
+      "matches": ["https://*.mitx.mit.edu/*"]
+    },
+    {
+      "resources": ["feedback-host.html"],
+      "matches": ["https://*.mitx.mit.edu/*"]
+    }
+  ]
+}

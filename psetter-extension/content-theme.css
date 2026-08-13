@@ -1,0 +1,52 @@
+/* Shared design tokens and font. Keep this file before component styles. */
+@font-face {
+  font-family: "Inter";
+  src: url("vendor/font/InterVariable.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+.pset-math-global-toggle,
+.pset-math-global-controls,
+.pset-math-developer-message-button,
+.pset-math-developer-message-panel,
+.pset-math-developer-message-panel *,
+.pset-math-trigger,
+.pset-math-takeover,
+.pset-math-details-slot,
+.pset-math-details,
+.pset-math-details *,
+.pset-math-restore-control,
+.pset-math-remote-notice {
+  --psetter-accent: rgb(232 12 12);
+  --psetter-accent-deep: rgb(232 12 12);
+  --psetter-accent-soft: rgb(232 12 12 / 8%);
+  --psetter-border: #e3e8ef;
+  --psetter-border-strong: #bdc7d4;
+  --psetter-surface: #ffffff;
+  --psetter-surface-soft: #f7f9fc;
+  --psetter-text: #172033;
+  --psetter-text-muted: #5d6879;
+  --psetter-hover: rgb(232 12 12 / 8%);
+  box-sizing: border-box;
+  font-family: Inter, Arial, sans-serif;
+}
+
+html[data-psetter-build-channel="dev"] .pset-math-global-toggle,
+html[data-psetter-build-channel="dev"] .pset-math-global-controls,
+html[data-psetter-build-channel="dev"] .pset-math-developer-message-button,
+html[data-psetter-build-channel="dev"] .pset-math-developer-message-panel,
+html[data-psetter-build-channel="dev"] .pset-math-developer-message-panel *,
+html[data-psetter-build-channel="dev"] .pset-math-trigger,
+html[data-psetter-build-channel="dev"] .pset-math-takeover,
+html[data-psetter-build-channel="dev"] .pset-math-details-slot,
+html[data-psetter-build-channel="dev"] .pset-math-details,
+html[data-psetter-build-channel="dev"] .pset-math-details *,
+html[data-psetter-build-channel="dev"] .pset-math-restore-control,
+html[data-psetter-build-channel="dev"] .pset-math-remote-notice {
+  --psetter-accent: #6d28d9;
+  --psetter-accent-deep: #5b21b6;
+  --psetter-accent-soft: rgb(109 40 217 / 9%);
+  --psetter-hover: rgb(109 40 217 / 9%);
+}
