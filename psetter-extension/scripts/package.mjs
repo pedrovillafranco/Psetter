@@ -111,6 +111,8 @@ if (isDev) {
   );
 }
 
+await normalizeTextFiles(packageDir);
+
 if (isDev) {
   const devManifest = {
     ...sourceManifest,
@@ -134,6 +136,20 @@ if (isDev) {
   await rm(archive, { force: true });
   await createDeterministicZip(packageDir, archive);
   console.log(`Packaged production extension at ${archive}`);
+}
+
+async function normalizeTextFiles(directory) {
+  const textExtensions = new Set([".css", ".html", ".js", ".json", ".svg", ".txt"]);
+  for (const file of await listFiles(directory)) {
+    if (!textExtensions.has(path.extname(file.relativePath).toLowerCase())) {
+      continue;
+    }
+    const source = await readFile(file.absolutePath, "utf8");
+    const normalized = source.replace(/\r\n?/g, "\n");
+    if (normalized !== source) {
+      await writeFile(file.absolutePath, normalized, "utf8");
+    }
+  }
 }
 
 async function listFiles(directory, prefix = "") {
