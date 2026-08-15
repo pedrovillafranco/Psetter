@@ -241,7 +241,8 @@
     developerMessagePanel.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
-      dismissDeveloperMessage();
+      developerMessagePanelOpen = false;
+      renderDeveloperMessage();
     });
     try {
       const api = getExtensionApi();

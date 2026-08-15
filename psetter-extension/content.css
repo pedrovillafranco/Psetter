@@ -83,7 +83,8 @@
   width: min(360px, calc(100vw - 28px)) !important;
   max-height: min(320px, calc(100vh - 84px)) !important;
   overflow: auto !important;
-  padding: 14px !important;
+  padding: 0 0 14px !important;
+  overflow-x: hidden !important;
   border: 1px solid var(--psetter-border-strong) !important;
   border-radius: 12px !important;
   background: var(--psetter-surface) !important;
@@ -95,33 +96,57 @@
 .pset-math-developer-message-header {
   display: flex !important;
   align-items: center !important;
-  justify-content: space-between !important;
-  gap: 8px !important;
+  justify-content: flex-start !important;
+  gap: 10px !important;
+  padding: 9px 14px !important;
+  border-radius: 11px 11px 0 0 !important;
+  background: var(--psetter-accent) !important;
+  color: #fff !important;
+}
+
+.pset-math-developer-message-header-label {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  color: #fff !important;
+  font: 750 16px/1.25 Inter, Arial, sans-serif !important;
+  text-align: left !important;
+}
+
+.pset-math-developer-message-header-logo {
+  display: block !important;
+  flex: 0 0 auto !important;
+  width: 30px !important;
+  height: 25px !important;
+  object-fit: contain !important;
 }
 
 .pset-math-developer-message-eyebrow {
   color: var(--psetter-accent-deep) !important;
   font: 800 10px/1.2 Inter, Arial, sans-serif !important;
   letter-spacing: 0.06em !important;
-  text-transform: uppercase !important;
+  text-transform: none !important;
 }
 
 .pset-math-developer-message-title {
-  margin: 9px 0 6px !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  margin: 14px 14px 0 !important;
+  padding-right: 4px !important;
+  overflow-wrap: anywhere !important;
   color: var(--psetter-text) !important;
   font: 750 16px/1.25 Inter, Arial, sans-serif !important;
 }
 
 .pset-math-developer-message-text,
 .pset-math-developer-message-signature {
-  margin: 0 !important;
+  margin: 0 14px !important;
   color: var(--psetter-text-muted) !important;
   font: 500 12px/1.5 Inter, Arial, sans-serif !important;
   white-space: pre-wrap !important;
 }
 
 .pset-math-developer-message-signature {
-  margin-top: 10px !important;
+  margin: 10px 14px 0 !important;
   color: var(--psetter-text) !important;
   font-weight: 700 !important;
 }
@@ -130,22 +155,51 @@
   appearance: none !important;
   display: grid !important;
   place-items: center !important;
-  width: 26px !important;
-  height: 26px !important;
+  width: 30px !important;
+  height: 30px !important;
   padding: 0 !important;
-  border: 1px solid var(--psetter-border) !important;
-  border-radius: 50% !important;
-  background: var(--psetter-surface-soft) !important;
-  color: var(--psetter-text-muted) !important;
-  font: 500 18px/1 Arial, sans-serif !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  color: #fff !important;
+  font: 500 28px/1 Arial, sans-serif !important;
+  box-shadow: none !important;
   cursor: pointer !important;
+  margin-left: auto !important;
 }
 
 .pset-math-developer-message-close:hover,
 .pset-math-developer-message-close:focus-visible {
-  border-color: var(--psetter-accent) !important;
-  color: var(--psetter-accent) !important;
-  outline: none !important;
+  border-color: transparent !important;
+  color: #fff !important;
+  outline: 2px solid var(--psetter-accent-soft) !important;
+}
+
+.pset-math-developer-message-footer {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  min-height: 34px !important;
+  margin: 12px -14px -1px !important;
+  position: relative !important;
+  z-index: 1 !important;
+  transform: translateY(1px) !important;
+  padding: 7px 14px !important;
+  border-radius: 0 0 12px 12px !important;
+  background: var(--psetter-accent) !important;
+  color: #fff !important;
+}
+
+.pset-math-developer-message-logo {
+  display: block !important;
+  width: 25px !important;
+  height: 20px !important;
+  object-fit: contain !important;
+}
+
+.pset-math-developer-message-name {
+  color: #fff !important;
+  font: 700 14px/1 Inter, Arial, sans-serif !important;
 }
 
 

@@ -251,7 +251,8 @@ p {
 .developer-message-panel {
   position: relative;
   margin: 12px 0 0;
-  padding: 12px;
+  padding: 0 0 12px;
+  overflow: hidden;
   border: 1px solid var(--psetter-border-strong);
   border-radius: 10px;
   background: var(--psetter-surface);
@@ -260,45 +261,89 @@ p {
 .developer-message-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 9px 12px;
+  background: var(--psetter-accent);
+  color: #fff;
+}
+.developer-message-header-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  line-height: 1.25;
+  text-align: left;
+}
+.developer-message-header-logo {
+  display: block;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 25px;
+  object-fit: contain;
 }
 .developer-message-close {
   appearance: none;
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
   padding: 0;
-  border: 1px solid var(--psetter-border);
-  border-radius: 50%;
-  background: var(--psetter-surface-soft);
-  color: var(--psetter-text-muted);
-  font-size: 18px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #fff;
+  font: 500 28px/1 Arial, sans-serif;
   line-height: 1;
   cursor: pointer;
+  margin-left: auto;
 }
 .developer-message-close:hover,
 .developer-message-close:focus-visible {
-  border-color: var(--psetter-accent);
-  color: var(--psetter-accent);
-  outline: none;
+  color: #fff;
+  outline: 2px solid var(--psetter-accent-soft);
 }
 .developer-message-panel h2 {
-  margin: 9px 0 5px;
+  margin: 14px 12px 0;
   color: var(--psetter-text);
   font-size: 15px;
   line-height: 1.25;
 }
+.developer-message-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  margin: 12px -12px -1px;
+  position: relative;
+  z-index: 1;
+  transform: translateY(1px);
+  padding: 7px 12px;
+  border-radius: 0 0 10px 10px;
+  background: var(--psetter-accent);
+  color: #fff;
+}
+.developer-message-logo {
+  display: block;
+  width: 25px;
+  height: 20px;
+  object-fit: contain;
+}
+.developer-message-name {
+  color: #fff;
+  font-size: 14px;
+}
 .developer-message-panel p {
-  margin: 0;
+  margin: 0 12px;
   color: var(--psetter-text-muted);
   font-size: 12px;
   line-height: 1.45;
   white-space: pre-wrap;
 }
 .developer-message-panel .developer-message-signature {
-  margin-top: 9px;
+  margin: 9px 12px 0;
   color: var(--psetter-text);
   font-weight: 700;
 }

@@ -16535,22 +16535,25 @@ ${t.innerHTML}`;
       }
       const panel = R("section", "pset-math-developer-message-panel");
       const header = R("div", "pset-math-developer-message-header");
-      const eyebrow = R("span", "pset-math-developer-message-eyebrow", "From Psetter");
+      const headerLogo = R("img", "pset-math-developer-message-header-logo");
+      const headerLabel = R("strong", "pset-math-developer-message-header-label", "Notification");
       const close = Be("×", "pset-math-developer-message-close", "Dismiss developer message");
       const title = R("h2", "pset-math-developer-message-title", message.title);
       const text = R("p", "pset-math-developer-message-text", message.text);
       const signature = R("p", "pset-math-developer-message-signature", message.signature ?? "");
       panel.setAttribute("role", "dialog");
       panel.setAttribute("aria-label", "Psetter developer message");
+      headerLogo.src = getExtensionUrl("icons/psetter-px-logo-white.svg");
+      headerLogo.alt = "P^x";
       signature.hidden = !message.signature;
-      header.append(eyebrow, close);
+      header.append(headerLogo, headerLabel, close);
       panel.append(header, title, text, signature);
       const dismissMessage = () => this.dismissDeveloperMessage();
       close.addEventListener("click", dismissMessage);
       panel.addEventListener("keydown", (event) => {
         if (event.key === "Escape") {
           event.preventDefault();
-          dismissMessage();
+          this.closeDeveloperMessage();
         }
       });
       this.developerMessagePanel = panel;
@@ -16708,6 +16711,13 @@ ${t.innerHTML}`;
           this.renderGlobalToggle());
       });
       this.listen(document, "pointerdown", (t) => {
+        if (
+          this.developerMessagePanel &&
+          !this.developerMessagePanel.contains(t.target) &&
+          !this.developerMessageButton?.contains(t.target)
+        ) {
+          this.closeDeveloperMessage();
+        }
         this.activeController &&
           !this.activeController.detailsOpen &&
           !this.isGlobalToggleTarget(t.target) &&
