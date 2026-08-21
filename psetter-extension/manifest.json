@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Psetter",
   "short_name": "Psetter",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Enter math visually in MITx with Psetter, an intuitive math editor.",
   "minimum_chrome_version": "120",
   "permissions": ["storage"],
@@ -16,6 +16,9 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
+  },
+  "background": {
+    "service_worker": "background.js"
   },
   "icons": {
     "16": "icons/icon16.png",

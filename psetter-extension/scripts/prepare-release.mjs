@@ -26,6 +26,13 @@ const candidateStatePath =
   readArgument(argv, "--candidate-state") ??
   path.join(rootDir, "dist", `${artifact.replace(/\.zip$/u, "")}.candidate.json`);
 const overlayCommit = channel === "store" ? readArgument(argv, "--overlay-commit", { required: true }) : null;
+const storeOverlayPath = readArgument(argv, "--store-overlay");
+if (channel === "store" && storeOverlayPath === null) {
+  throw new Error("Store release preparation requires --store-overlay.");
+}
+if (channel !== "store" && storeOverlayPath !== null) {
+  throw new Error("A Store overlay may only be used for Store release preparation.");
+}
 
 function git(...args) {
   const result = spawnSync("git", args, { cwd: rootDir, encoding: "utf8" });
@@ -65,7 +72,12 @@ const testFiles = (await readdir(testDir))
 for (const arguments_ of [
   [path.join(scriptDir, "check.mjs")],
   ["--test", ...testFiles],
-  [path.join(scriptDir, "check-reproducible.mjs"), "--channel", channel],
+  [
+    path.join(scriptDir, "check-reproducible.mjs"),
+    "--channel",
+    channel,
+    ...(storeOverlayPath === null ? [] : ["--store-overlay", storeOverlayPath]),
+  ],
 ]) {
   const result = spawnSync(process.execPath, arguments_, {
     cwd: extensionDir,

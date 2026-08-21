@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.2
+
+- Fixed Store packaging so the feedback and remote-configuration overlay is
+  embedded in the MITx content script, not only extension pages. Store
+  boundary checks now fail if that content bundle is not feedback-enabled.
+- Fixed the Store feedback host so the hosted form is shown immediately and
+  the loading status hides reliably instead of waiting indefinitely on a
+  cross-origin iframe load event.
+- Routed Store feedback popup creation through the extension background API so
+  MITx pages do not attempt cross-origin popup navigation.
+- Hardened Store feedback acknowledgments and close routing across service
+  worker suspension, and added an explicit hosted-form readiness handshake.
+- Refined the editor footer with a light-weight version label and a single,
+  right-aligned Feedback action.
+
 ## 0.1.1
 
 - Added explicit community and Store release channels with ignored candidate

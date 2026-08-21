@@ -20,11 +20,13 @@ const rootDir = path.resolve(extensionDir, "..");
 const manifest = JSON.parse(await readFile(path.join(extensionDir, "manifest.json"), "utf8"));
 const rootPackage = JSON.parse(await readFile(path.join(rootDir, "package.json"), "utf8"));
 const overlayCommit = channel === "store" ? readArgument(argv, "--overlay-commit", { required: true }) : null;
+const storeOverlayPath = readArgument(argv, "--store-overlay");
 if (overlayCommit !== null) assertCommit(overlayCommit, "Store overlay commit");
-if (channel === "store") {
-  throw new Error(
-    "Store candidate preparation requires the reviewed Store overlay before a candidate can be built.",
-  );
+if (channel === "store" && storeOverlayPath === null) {
+  throw new Error("Store candidate preparation requires --store-overlay.");
+}
+if (channel !== "store" && storeOverlayPath !== null) {
+  throw new Error("A Store overlay may only be used for Store candidates.");
 }
 
 function git(...args) {
@@ -39,7 +41,12 @@ if (git("status", "--porcelain")) {
 const publicCommit = assertCommit(git("rev-parse", "HEAD"), "Public commit");
 const reproducible = spawnSync(
   process.execPath,
-  [path.join(scriptDir, "check-reproducible.mjs"), "--channel", channel],
+  [
+    path.join(scriptDir, "check-reproducible.mjs"),
+    "--channel",
+    channel,
+    ...(storeOverlayPath === null ? [] : ["--store-overlay", storeOverlayPath]),
+  ],
   { cwd: extensionDir, stdio: "inherit" },
 );
 if (reproducible.status !== 0) process.exit(reproducible.status ?? 1);

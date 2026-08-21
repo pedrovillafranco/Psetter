@@ -848,7 +848,7 @@
 
 .pset-math-brand-version {
   color: #fff !important;
-  font: 500 11px/1 Inter, Arial, sans-serif !important;
+  font: 300 11px/1 Inter, Arial, sans-serif !important;
   font-variant-numeric: tabular-nums !important;
   white-space: nowrap !important;
 }

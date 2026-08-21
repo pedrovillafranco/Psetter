@@ -56,11 +56,18 @@ async function createRuntime(html, options = {}) {
   };
   const storage = { psetMathSettings: settings };
   const listeners = new Set();
+  let runtimeMessageListener;
   window.chrome = {
     runtime: {
       getURL: (path = "") => `chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/${path}`,
       getManifest: () => ({ version: "0.1.1" }),
-      onMessage: { addListener() {}, removeListener() {} },
+      sendMessage: async () => ({ ok: true, windowId: 1 }),
+      onMessage: {
+        addListener(listener) { runtimeMessageListener = listener; },
+        removeListener(listener) {
+          if (runtimeMessageListener === listener) runtimeMessageListener = undefined;
+        },
+      },
     },
     storage: {
       local: {
@@ -97,7 +104,7 @@ async function createRuntime(html, options = {}) {
   options.beforeRuntime?.(window);
   window.eval(runtime);
   await new Promise((resolve) => window.setTimeout(resolve, 30));
-  return { dom, window, storage };
+  return { dom, window, storage, runtimeMessageListener };
 }
 
 function contextItems(controller) {
@@ -881,8 +888,53 @@ test("community feedback control fails closed without opening a hosted service",
     const feedback = controller.detailsPanel.querySelector("button.pset-math-feedback-link");
     assert.ok(feedback);
     feedback.click();
-    assert.equal(manager.openFeedback(), false);
+    assert.deepEqual(JSON.parse(JSON.stringify(await manager.openFeedback())), { ok: false });
     assert.equal(popups.length, 0);
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("Store feedback delegates popup creation to the extension background API", async () => {
+  const messages = [];
+  const { dom, window, runtimeMessageListener } = await createRuntime(problem("store_feedback", "<p>Find x.</p>"), {
+    beforeRuntime(currentWindow) {
+      currentWindow.__psetterConfig = {
+        settingsKey: "psetMathSettings",
+        symbolsOpenKey: "psetMathSymbolsOpen",
+        usageKey: "psetMathUsage",
+        restoreHintKey: "psetterRestoreHintV1",
+        feedbackEnabled: true,
+        feedbackHostPath: "feedback-host.html",
+        buildChannel: "production",
+        mitxHostname: "mitx.mit.edu",
+      };
+      currentWindow.chrome.runtime.sendMessage = async (message) => {
+        messages.push(message);
+        return { ok: true, windowId: 7 };
+      };
+    },
+  });
+  try {
+    const manager = window.__psetterRuntime;
+    const responsePromise = new Promise((resolve) => {
+      assert.equal(
+        runtimeMessageListener({ target: "psetter-open-feedback" }, {}, resolve),
+        true,
+      );
+    });
+    assert.deepEqual(JSON.parse(JSON.stringify(await responsePromise)), { ok: true, windowId: 7 });
+    assert.deepEqual(JSON.parse(JSON.stringify(messages[0])), {
+      target: "psetter-open-feedback",
+      path: "feedback-host.html",
+      version: "0.1.1",
+    });
+    manager.closeFeedback();
+    assert.deepEqual(JSON.parse(JSON.stringify(messages[1])), {
+      target: "psetter-close-feedback",
+      windowId: 7,
+    });
   } finally {
     window.__psetterRuntime?.dispose();
     dom.window.close();

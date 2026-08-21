@@ -14,6 +14,8 @@ const rootDir = path.resolve(extensionDir, "..");
 test("public extension inputs contain no store infrastructure leaks", async () => {
   await assertPublicTree(extensionDir, "public extension inputs");
   const manifest = JSON.parse(await readFile(path.join(extensionDir, "manifest.json"), "utf8"));
+  assert.equal(manifest.background?.service_worker, "background.js");
+  assert.equal(existsSync(path.join(extensionDir, "background.js")), true);
   assert.deepEqual(manifest.host_permissions, ["https://*.mitx.mit.edu/*"]);
   assert.equal(manifest.web_accessible_resources.some((entry) =>
     entry.resources.some((resource) => resource.startsWith("feedback-host.")),

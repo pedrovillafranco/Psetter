@@ -16728,13 +16728,9 @@ import {
           `v${getExtensionApi()?.runtime?.getManifest?.().version ?? "0.0.0"}`,
         ),
         ae = R("div", "pset-math-brand-links"),
-        le = R("a", void 0, "GitHub"),
         ce = Be("Feedback", "pset-math-feedback-link", "Open feedback form");
       pe.src = getExtensionUrl("icons/psetter-px-logo-white.svg");
       pe.alt = "P^x";
-      le.href = "https://github.com/pedrovillafranco/psetter";
-      le.target = "_blank";
-      le.rel = "noopener noreferrer";
       ce.type = "button";
       this.listenScoped(this.detailsDisposers, ce, "click", (event) => {
         event.preventDefault();
@@ -16742,7 +16738,7 @@ import {
         this.hooks.onFeedbackRequested?.();
       });
       ce.hidden = this.settings.feedbackDisabled === !0;
-      ae.append(le, ce);
+      ae.append(ce);
       ie.append(pe, de, ve, ae);
       return (
         (this.paletteGrid = re),
@@ -17222,7 +17218,7 @@ import {
     developerMessagePanel;
     developerMessageReadId = null;
     globalNotice;
-    feedbackWindow;
+    feedbackWindowId;
     isTopWindow = window.top === window.self;
     started = !1;
     disposed = !1;
@@ -17401,37 +17397,40 @@ import {
       this.developerMessageButton.setAttribute("aria-hidden", unread ? "false" : "true");
       if (!unread) this.closeDeveloperMessage();
     }
-    openFeedback() {
-      if (this.remoteConfig.feedbackDisabled || PSETTER_CONFIG.feedbackEnabled !== true) return !1;
+    async openFeedback() {
+      if (this.remoteConfig.feedbackDisabled || PSETTER_CONFIG.feedbackEnabled !== true) return { ok: !1 };
       const feedbackHostPath = PSETTER_CONFIG.feedbackHostPath;
-      if (!feedbackHostPath) return !1;
-      if (this.feedbackWindow && !this.feedbackWindow.closed) {
-        this.feedbackWindow.focus();
-        return !0;
-      }
+      if (!feedbackHostPath) return { ok: !1 };
+      const runtime = getExtensionApi()?.runtime;
+      if (typeof runtime?.sendMessage !== "function") return { ok: !1 };
       try {
-        const s = new URL(getExtensionUrl(feedbackHostPath));
-        s.searchParams.set(
-          "version",
-          getExtensionApi()?.runtime?.getManifest?.().version ?? "unknown",
-        );
-        const popupName = `psetter-feedback-${getExtensionApi()?.runtime?.id ?? "window"}`;
-        const popup = window.open(
-          s.href,
-          popupName,
-          "popup=yes,width=500,height=500,resizable=yes,scrollbars=yes",
-        );
-        if (!popup) return !1;
-        this.feedbackWindow = popup;
-        popup.focus();
-        return !0;
+        const response = await runtime.sendMessage({
+          target: "psetter-open-feedback",
+          path: feedbackHostPath,
+          version: runtime.getManifest?.().version ?? "unknown",
+        });
+        if (response?.ok === true && Number.isInteger(response.windowId)) {
+          this.feedbackWindowId = response.windowId;
+          return { ok: !0, windowId: response.windowId };
+        }
       } catch {
-        return !1;
+        // Fall through to the explicit failure response so popup callers can
+        // use their hosted-page fallback when the background rejects a request.
       }
+      return { ok: !1 };
     }
     closeFeedback() {
-      if (this.feedbackWindow && !this.feedbackWindow.closed) this.feedbackWindow.close();
-      this.feedbackWindow = void 0;
+      const runtime = getExtensionApi()?.runtime;
+      if (typeof runtime?.sendMessage === "function") {
+        try {
+          const result = runtime.sendMessage({
+            target: "psetter-close-feedback",
+            windowId: this.feedbackWindowId,
+          });
+          result?.catch?.(() => {});
+        } catch {}
+      }
+      this.feedbackWindowId = void 0;
     }
     controllerSettings() {
       return {
@@ -17909,8 +17908,11 @@ import {
     let e = new Ai();
     let i = (r, n, s) => {
       if (r?.target === "psetter-open-feedback") {
-        s({ ok: e.openFeedback() });
-        return;
+        Promise.resolve(e.openFeedback()).then(
+          (response) => s(response?.ok === !0 ? response : { ok: !1 }),
+          () => s({ ok: !1 }),
+        );
+        return !0;
       }
       if (r?.target === "psetter-settings-update" && r.settings) {
         ((e.settings = zi(r.settings)), e.applySettings());

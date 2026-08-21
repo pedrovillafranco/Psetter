@@ -113,3 +113,52 @@ export async function assertPublicZip(zipPath, label = "community ZIP") {
     assertTextIsPublic(entry.content.toString("utf8"), `${label}/${entry.name}`);
   }
 }
+
+export async function assertStoreZip(zipPath, label = "Store ZIP") {
+  const bytes = await readFile(zipPath);
+  const entries = readZipEntries(bytes);
+  const byName = new Map(entries.map((entry) => [entry.name, entry.content]));
+  for (const required of ["manifest.json", "content.js", "background.js", "runtime-config.js", "feedback-host.html", "feedback-host.css", "feedback-host.js"]) {
+    if (!byName.has(required)) throw new Error(`${label} is missing the Store overlay file ${required}.`);
+  }
+
+  const manifest = JSON.parse(byName.get("manifest.json").toString("utf8"));
+  const runtimeConfig = byName.get("runtime-config.js").toString("utf8");
+  const originMatch = runtimeConfig.match(/\bfeedbackPageOrigin\s*:\s*["'](https:\/\/[^"']+)["']/u);
+  if (!originMatch) throw new Error(`${label} runtime configuration has no HTTPS feedback origin.`);
+  const feedbackOrigin = originMatch[1].replace(/\/$/u, "");
+  const content = byName.get("content.js").toString("utf8");
+  const contentConfigMatch = content.match(
+    /globalThis\.__psetterConfig\s*=\s*Object\.freeze\(\{([\s\S]*?)\}\)/u,
+  );
+  if (!contentConfigMatch) throw new Error(`${label} content bundle has no embedded runtime configuration.`);
+  if (!/\bfeedbackEnabled\s*:\s*(?:true|!0)\b/u.test(contentConfigMatch[1])) {
+    throw new Error(`${label} content bundle does not enable feedback.`);
+  }
+  if (!/\bfeedbackHostPath\s*:\s*["']feedback-host\.html["']/u.test(contentConfigMatch[1])) {
+    throw new Error(`${label} content bundle has no feedback host path.`);
+  }
+  if (!content.includes(feedbackOrigin)) {
+    throw new Error(`${label} content bundle does not contain the configured feedback origin.`);
+  }
+  if (!manifest.host_permissions?.includes(`${feedbackOrigin}/*`)) {
+    throw new Error(`${label} manifest is missing the Store feedback host permission.`);
+  }
+  if (!manifest.web_accessible_resources?.some((entry) =>
+    entry.resources?.includes("feedback-host.html") &&
+    entry.matches?.includes("https://*.mitx.mit.edu/*"),
+  )) {
+    throw new Error(`${label} manifest is missing the Store feedback-host resource declaration.`);
+  }
+  for (const entry of entries) {
+    const extension = path.posix.extname(entry.name).toLowerCase();
+    if (!TEXT_EXTENSIONS.has(extension)) continue;
+    const content = entry.content.toString("utf8");
+    if (content.includes("__PSETTER_BUILD_CHANNEL__")) {
+      throw new Error(`${label} contains an unresolved build-channel placeholder in ${entry.name}.`);
+    }
+    if (/\b(?:eval|Function|importScripts)\s*\(/u.test(content)) {
+      throw new Error(`${label} contains executable indirection in ${entry.name}.`);
+    }
+  }
+}

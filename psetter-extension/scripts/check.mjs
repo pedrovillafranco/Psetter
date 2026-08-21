@@ -12,6 +12,7 @@ const checks = [
   ["release provenance", path.join(extensionDir, "release-provenance.mjs")],
   ["candidate preparation", path.join(extensionDir, "prepare-candidate.mjs")],
   ["candidate attestation", path.join(extensionDir, "attest-candidate.mjs")],
+  ["store overlay", path.join(extensionDir, "store-overlay.mjs")],
   ["content runtime", path.join(extensionDir, "..", "src", "content-runtime.js")],
   ["popup", path.join(extensionDir, "..", "popup.js")],
   ["development popup", path.join(extensionDir, "..", "popup-dev.js")],
@@ -58,6 +59,7 @@ const declaredFiles = [
   ]),
   ...(manifest.icons ? Object.values(manifest.icons) : []),
   ...(manifest.action?.default_icon ? Object.values(manifest.action.default_icon) : []),
+  ...(manifest.background?.service_worker ? [manifest.background.service_worker] : []),
 ];
 for (const file of declaredFiles) {
   if (!existsSync(path.join(extensionDir, "..", file))) {
