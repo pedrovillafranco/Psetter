@@ -2,16 +2,21 @@ import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { assertPublicTree } from "./check-boundary.mjs";
 
 const extensionDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(extensionDir, "..", "..");
 
 const checks = [
+  ["semantic model", path.join(extensionDir, "..", "src", "semantic-model.js")],
+  ["release provenance", path.join(extensionDir, "release-provenance.mjs")],
+  ["candidate preparation", path.join(extensionDir, "prepare-candidate.mjs")],
+  ["candidate attestation", path.join(extensionDir, "attest-candidate.mjs")],
+  ["store overlay", path.join(extensionDir, "store-overlay.mjs")],
   ["content runtime", path.join(extensionDir, "..", "src", "content-runtime.js")],
   ["popup", path.join(extensionDir, "..", "popup.js")],
   ["development popup", path.join(extensionDir, "..", "popup-dev.js")],
   ["remote config", path.join(extensionDir, "..", "remote-config.js")],
-  ["feedback host", path.join(extensionDir, "..", "feedback-host.js")],
   ["local demo", path.join(extensionDir, "..", "demo.js")],
 ];
 
@@ -43,10 +48,9 @@ if (JSON.stringify(manifest.permissions ?? []) !== JSON.stringify(["storage"])) 
 }
 const expectedHosts = [
   "https://*.mitx.mit.edu/*",
-  "https://feedback.psetter.villafran.co/*",
 ];
 if (JSON.stringify(manifest.host_permissions ?? []) !== JSON.stringify(expectedHosts)) {
-  throw new Error("Host permissions differ from the reviewed MITx and Feedback scope.");
+  throw new Error("Host permissions differ from the reviewed MITx scope.");
 }
 const declaredFiles = [
   ...(manifest.content_scripts ?? []).flatMap((script) => [
@@ -55,11 +59,14 @@ const declaredFiles = [
   ]),
   ...(manifest.icons ? Object.values(manifest.icons) : []),
   ...(manifest.action?.default_icon ? Object.values(manifest.action.default_icon) : []),
+  ...(manifest.background?.service_worker ? [manifest.background.service_worker] : []),
 ];
 for (const file of declaredFiles) {
   if (!existsSync(path.join(extensionDir, "..", file))) {
     throw new Error(`Manifest references missing file: ${file}`);
   }
 }
+
+await assertPublicTree(path.join(extensionDir, ".."), "public extension inputs");
 
 console.log("Extension syntax checks passed.");

@@ -6,8 +6,9 @@
   const SETTINGS_KEY = CONFIG.settingsKey ?? "psetMathSettings";
   const BUILD_CHANNEL = CONFIG.buildChannel ?? "production";
   const USAGE_KEY = CONFIG.usageKey ?? "psetMathUsage";
-  const FEEDBACK_PAGE_URL =
-    CONFIG.feedbackPageUrl ?? "https://feedback.psetter.villafran.co/feedback";
+  const FEEDBACK_PAGE_URL = CONFIG.feedbackPageUrl ?? "";
+  const FEEDBACK_PAGE_ORIGIN = CONFIG.feedbackPageOrigin ?? "";
+  const FEEDBACK_ENABLED = CONFIG.feedbackEnabled === true;
   const SECONDS_SAVED_PER_OPERATION = 0.3;
   const defaults = {
     enabled: true,
@@ -78,6 +79,7 @@
   const remoteNoticeTitle = getNode("#remoteNoticeTitle");
   const remoteNoticeMessage = getNode("#remoteNoticeMessage");
   const feedbackLink = getNode("#feedbackLink");
+  const extensionVersion = getNode("#extensionVersion");
   const developerMessageNotice = getNode("#developerMessageNotice");
   const developerMessageTeaser = getNode("#developerMessageTeaser");
   const developerMessageOpen = getNode("#developerMessageOpen");
@@ -94,7 +96,7 @@
   let developerMessagePanelOpen = false;
   let remoteConfig = REMOTE_API?.defaults ?? {
     disabled: false,
-    feedbackDisabled: false,
+    feedbackDisabled: !FEEDBACK_ENABLED,
     minimumSupportedVersion: null,
     compatibilityWarning: null,
     maintenanceMessage: null,
@@ -159,6 +161,11 @@
     buildBadge.hidden = !isDev;
   }
 
+  function renderVersion() {
+    const version = getExtensionApi()?.runtime?.getManifest?.().version ?? "0.0.0";
+    extensionVersion.textContent = `v${version}`;
+  }
+
   function renderRemoteConfig() {
     const version = getExtensionApi()?.runtime?.getManifest?.().version ?? "0.0.0";
     const needsUpdate = REMOTE_API?.isVersionBelow?.(
@@ -184,8 +191,9 @@
     remoteNotice.className = `remote-notice ${tone}`;
     remoteNoticeTitle.textContent = title;
     remoteNoticeMessage.textContent = message;
-    feedbackLink.hidden = remoteConfig.feedbackDisabled;
-    feedbackLink.disabled = remoteConfig.feedbackDisabled;
+    const feedbackUnavailable = remoteConfig.feedbackDisabled || !FEEDBACK_ENABLED;
+    feedbackLink.hidden = feedbackUnavailable;
+    feedbackLink.disabled = feedbackUnavailable;
     renderSettings();
     renderDeveloperMessage();
   }
@@ -358,11 +366,14 @@
   }
 
   async function openHostedFeedback(api) {
+    if (!FEEDBACK_PAGE_URL || !FEEDBACK_PAGE_ORIGIN) {
+      throw new Error("Feedback is unavailable in this build.");
+    }
     if (!api?.tabs?.create) throw new Error("Chrome tabs API is unavailable.");
     const url = new URL(FEEDBACK_PAGE_URL);
     if (
       url.protocol !== "https:" ||
-      url.hostname !== "feedback.psetter.villafran.co" ||
+      url.origin !== FEEDBACK_PAGE_ORIGIN ||
       url.pathname !== "/feedback"
     ) {
       throw new Error("Invalid feedback page URL.");
@@ -424,13 +435,16 @@
         if (!openedInTab) await openHostedFeedback(api);
         window.close();
       } catch {
-        feedbackLink.title = "Unable to open feedback right now. Please try again.";
+        feedbackLink.title = FEEDBACK_ENABLED
+          ? "Unable to open feedback right now. Please try again."
+          : "Feedback is unavailable in the community build.";
         feedbackLink.focus();
       }
     });
   }
 
   renderBuildChannel();
+  renderVersion();
 
   Promise.all([
     loadSettings(),

@@ -4,6 +4,9 @@ import { createRequire } from "node:module";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { assertPublicZip, assertPublicTree, assertStoreZip } from "./check-boundary.mjs";
+import { artifactFileName, parseReleaseChannel, readArgument } from "./release-provenance.mjs";
+import { loadStoreOverlay } from "./store-overlay.mjs";
 
 const require = createRequire(import.meta.url);
 const yazl = require("yazl");
@@ -11,15 +14,34 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const extensionDir = path.resolve(scriptDir, "..");
 const rootDir = path.resolve(extensionDir, "..");
 const isDev = process.argv.includes("--dev");
-const channel = isDev ? "dev" : "production";
+if (isDev && process.argv.includes("--channel")) {
+  throw new Error("Development packaging cannot be combined with a release channel.");
+}
+const releaseChannel = isDev ? null : parseReleaseChannel(process.argv.slice(2));
+const storeOverlayPath = readArgument(process.argv.slice(2), "--store-overlay");
+if (isDev && storeOverlayPath !== null) {
+  throw new Error("Development packaging cannot consume a Store overlay.");
+}
+if (releaseChannel !== "store" && storeOverlayPath !== null) {
+  throw new Error("A Store overlay may only be used with --channel store.");
+}
+const storeOverlay = releaseChannel === "store" ? await loadStoreOverlay(storeOverlayPath) : null;
+const buildChannel = isDev ? "dev" : "production";
 const manifestPath = path.join(extensionDir, "manifest.json");
 const sourceManifest = JSON.parse(await readFile(manifestPath, "utf8"));
-const packageName = isDev ? "psetter-dev" : "psetter";
+const packageName = isDev ? "psetter-dev" : `psetter-${releaseChannel}`;
 const packageDir = path.join(rootDir, "dist", packageName);
-const archive = path.join(rootDir, "dist", `psetter-v${sourceManifest.version}.zip`);
+const archive = isDev
+  ? null
+  : path.join(rootDir, "dist", artifactFileName(sourceManifest.version, releaseChannel));
 const fixedZipDate = new Date("1980-01-01T00:00:00.000Z");
 
-const { builtContentPath } = await import("./build.mjs");
+const { buildContent } = await import("./build.mjs");
+await assertPublicTree(extensionDir, "public extension inputs");
+const builtContentPath = await buildContent({
+  runtimeConfigPath: storeOverlay ? path.join(storeOverlay.directory, "runtime-config.js") : null,
+  outputPath: storeOverlay ? path.join(rootDir, "dist", ".build", "content-store.js") : null,
+});
 if (!isDev) {
   const productionContent = await readFile(builtContentPath, "utf8");
   if (
@@ -41,11 +63,9 @@ const releaseFiles = [
   "popup.html",
   "popup.css",
   "popup.js",
+  "background.js",
   "runtime-config.js",
   "remote-config.js",
-  "feedback-host.html",
-  "feedback-host.css",
-  "feedback-host.js",
   "demo.html",
   "demo.css",
   "demo.js",
@@ -64,6 +84,24 @@ for (const file of releaseFiles) {
   const sourcePath = file === "content.js" ? builtContentPath : path.join(extensionDir, file);
   await cp(sourcePath, path.join(packageDir, file));
 }
+if (storeOverlay) {
+  for (const file of ["feedback-host.html", "feedback-host.css", "feedback-host.js"]) {
+    await writeFile(path.join(packageDir, file), storeOverlay.files[file], "utf8");
+  }
+  await writeFile(path.join(packageDir, "runtime-config.js"), storeOverlay.files["runtime-config.js"], "utf8");
+  const storeManifest = {
+    ...sourceManifest,
+    host_permissions: [...sourceManifest.host_permissions, `${storeOverlay.feedbackOrigin}/*`],
+    web_accessible_resources: [
+      ...sourceManifest.web_accessible_resources,
+      {
+        resources: ["feedback-host.html"],
+        matches: ["https://*.mitx.mit.edu/*"],
+      },
+    ],
+  };
+  await writeFile(path.join(packageDir, "manifest.json"), `${JSON.stringify(storeManifest, null, 2)}\n`, "utf8");
+}
 if (isDev) {
   await cp(path.join(extensionDir, "popup-dev.js"), path.join(packageDir, "popup-dev.js"));
 }
@@ -79,7 +117,7 @@ for (const file of releaseIconFiles) {
 for (const relativePath of ["runtime-config.js", "content.js"]) {
   const outputPath = path.join(packageDir, relativePath);
   const source = await readFile(outputPath, "utf8");
-  const transformed = source.replaceAll("__PSETTER_BUILD_CHANNEL__", channel);
+  const transformed = source.replaceAll("__PSETTER_BUILD_CHANNEL__", buildChannel);
   if (transformed.includes("__PSETTER_BUILD_CHANNEL__")) {
     throw new Error(`Unresolved build channel in ${relativePath}`);
   }
@@ -135,6 +173,8 @@ if (isDev) {
 } else {
   await rm(archive, { force: true });
   await createDeterministicZip(packageDir, archive);
+  if (releaseChannel === "store") await assertStoreZip(archive, "Store ZIP");
+  else await assertPublicZip(archive, "community ZIP");
   console.log(`Packaged production extension at ${archive}`);
 }
 

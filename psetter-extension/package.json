@@ -1,18 +1,28 @@
 {
   "name": "@psetter/extension",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "scripts": {
     "check": "node scripts/check.mjs && node --test test/*.test.mjs",
     "build": "node scripts/build.mjs",
-    "package": "node scripts/package.mjs",
+    "package": "node scripts/package.mjs --channel community",
+    "package:community": "node scripts/package.mjs --channel community",
+    "package:store": "node scripts/package.mjs --channel store",
     "package:dev": "node scripts/package.mjs --dev",
-    "check:reproducible": "node scripts/check-reproducible.mjs",
-    "release:prepare": "node scripts/prepare-release.mjs"
+    "check:reproducible": "node scripts/check-reproducible.mjs --channel community",
+    "check:reproducible:community": "node scripts/check-reproducible.mjs --channel community",
+    "check:reproducible:store": "node scripts/check-reproducible.mjs --channel store",
+    "release:candidate:community": "node scripts/prepare-candidate.mjs --channel community",
+    "release:candidate:store": "node scripts/prepare-candidate.mjs --channel store",
+    "release:prepare": "node scripts/prepare-release.mjs",
+    "release:prepare:community": "node scripts/prepare-release.mjs --channel community",
+    "release:prepare:store": "node scripts/prepare-release.mjs --channel store",
+    "release:attest:store": "node scripts/attest-candidate.mjs --channel store"
   },
   "devDependencies": {
     "esbuild": "^0.28.1",
+    "jsdom": "26.1.0",
     "yazl": "^3.3.1"
   }
 }

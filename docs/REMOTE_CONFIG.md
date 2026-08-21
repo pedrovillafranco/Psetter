@@ -36,7 +36,7 @@ Validation is fail-closed:
 - A version must use Chrome-style numeric version syntax, or it must be `null`.
 - The response must be valid JSON. Its maximum size is 4 KiB. The response must arrive within three seconds.
 - Psetter rejects redirects, credentials, and content that is not JSON.
-- Psetter can store the last valid response locally for the configured five-minute freshness window. After this period, the response expires. Expired emergency flags do not remain active when Psetter is offline.
+- Psetter can store the last valid response locally for the configured five-minute freshness window. A valid emergency disable remains active after that window until a fresh valid configuration explicitly releases it; network uncertainty cannot re-enable the editor.
 
 Only the top MITx frame makes the request. Nested course frames do not independently request parser data or configuration data. They receive the validated state from the top frame through frame messaging.
 

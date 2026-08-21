@@ -1,14 +1,23 @@
 {
   "name": "psetter",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "private": true,
   "packageManager": "pnpm@11.19.0",
   "scripts": {
     "extension:check": "pnpm --filter @psetter/extension check",
     "extension:build": "pnpm --filter @psetter/extension build",
-    "extension:package": "pnpm --filter @psetter/extension package",
+    "extension:package": "pnpm --filter @psetter/extension package:community",
+    "extension:package:community": "pnpm --filter @psetter/extension package:community",
+    "extension:package:store": "pnpm --filter @psetter/extension package:store",
     "extension:package:dev": "pnpm --filter @psetter/extension package:dev",
     "extension:reproducible": "pnpm --filter @psetter/extension check:reproducible",
-    "release:prepare": "pnpm --filter @psetter/extension release:prepare"
+    "extension:reproducible:community": "pnpm --filter @psetter/extension check:reproducible:community",
+    "extension:reproducible:store": "pnpm --filter @psetter/extension check:reproducible:store",
+    "release:candidate:community": "pnpm --filter @psetter/extension release:candidate:community",
+    "release:candidate:store": "pnpm --filter @psetter/extension release:candidate:store",
+    "release:prepare": "pnpm --filter @psetter/extension release:prepare",
+    "release:prepare:community": "pnpm --filter @psetter/extension release:prepare:community",
+    "release:prepare:store": "pnpm --filter @psetter/extension release:prepare:store",
+    "release:attest:store": "pnpm --filter @psetter/extension release:attest:store"
   }
 }

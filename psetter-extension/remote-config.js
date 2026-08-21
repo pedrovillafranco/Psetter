@@ -4,6 +4,7 @@
   const CONFIG = globalThis.__psetterConfig ?? {};
   const CACHE_KEY = CONFIG.remoteConfigKey ?? "psetterRemoteConfigV1";
   const CONFIG_URL = CONFIG.remoteConfigUrl ?? "";
+  const REMOTE_CONFIG_ENABLED = Boolean(CONFIG_URL);
   const CACHE_TTL_MS = Number.isFinite(CONFIG.remoteConfigTtlMs)
     ? Math.max(60_000, Math.min(CONFIG.remoteConfigTtlMs, 60 * 60 * 1000))
     : 5 * 60 * 1000;
@@ -18,7 +19,7 @@
   const DEFAULT_CONFIG = deepFreeze({
     schemaVersion: 1,
     disabled: false,
-    feedbackDisabled: false,
+    feedbackDisabled: CONFIG.feedbackEnabled !== true,
     minimumSupportedVersion: null,
     compatibilityWarning: null,
     maintenanceMessage: null,
@@ -284,13 +285,15 @@
 
   let pendingLoad;
   async function loadCached() {
+    if (!REMOTE_CONFIG_ENABLED) return DEFAULT_CONFIG;
     const cached = await readCache();
-    return cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS
+    return cached && (cached.config.disabled || Date.now() - cached.fetchedAt < CACHE_TTL_MS)
       ? cached.config
       : DEFAULT_CONFIG;
   }
 
   async function load(options = {}) {
+    if (!REMOTE_CONFIG_ENABLED) return DEFAULT_CONFIG;
     if (pendingLoad) return pendingLoad;
     pendingLoad = (async () => {
       const now = Date.now();
@@ -303,7 +306,7 @@
         await writeCache(remote, now);
         return remote;
       }
-      return cached && now - cached.fetchedAt < CACHE_TTL_MS
+      return cached && (cached.config.disabled || now - cached.fetchedAt < CACHE_TTL_MS)
         ? cached.config
         : DEFAULT_CONFIG;
     })();
