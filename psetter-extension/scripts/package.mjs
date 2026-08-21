@@ -4,6 +4,8 @@ import { createRequire } from "node:module";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { assertPublicZip, assertPublicTree } from "./check-boundary.mjs";
+import { artifactFileName, parseReleaseChannel } from "./release-provenance.mjs";
 
 const require = createRequire(import.meta.url);
 const yazl = require("yazl");
@@ -11,15 +13,28 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const extensionDir = path.resolve(scriptDir, "..");
 const rootDir = path.resolve(extensionDir, "..");
 const isDev = process.argv.includes("--dev");
-const channel = isDev ? "dev" : "production";
+if (isDev && process.argv.includes("--channel")) {
+  throw new Error("Development packaging cannot be combined with a release channel.");
+}
+const releaseChannel = isDev ? null : parseReleaseChannel(process.argv.slice(2));
+const buildChannel = isDev ? "dev" : "production";
 const manifestPath = path.join(extensionDir, "manifest.json");
 const sourceManifest = JSON.parse(await readFile(manifestPath, "utf8"));
-const packageName = isDev ? "psetter-dev" : "psetter";
+const packageName = isDev ? "psetter-dev" : `psetter-${releaseChannel}`;
 const packageDir = path.join(rootDir, "dist", packageName);
-const archive = path.join(rootDir, "dist", `psetter-v${sourceManifest.version}.zip`);
+const archive = isDev
+  ? null
+  : path.join(rootDir, "dist", artifactFileName(sourceManifest.version, releaseChannel));
 const fixedZipDate = new Date("1980-01-01T00:00:00.000Z");
 
+if (releaseChannel === "store") {
+  throw new Error(
+    "Store packaging requires a reviewed Store overlay; the community package is the only configured channel.",
+  );
+}
+
 const { builtContentPath } = await import("./build.mjs");
+await assertPublicTree(extensionDir, "public extension inputs");
 if (!isDev) {
   const productionContent = await readFile(builtContentPath, "utf8");
   if (
@@ -43,9 +58,6 @@ const releaseFiles = [
   "popup.js",
   "runtime-config.js",
   "remote-config.js",
-  "feedback-host.html",
-  "feedback-host.css",
-  "feedback-host.js",
   "demo.html",
   "demo.css",
   "demo.js",
@@ -79,7 +91,7 @@ for (const file of releaseIconFiles) {
 for (const relativePath of ["runtime-config.js", "content.js"]) {
   const outputPath = path.join(packageDir, relativePath);
   const source = await readFile(outputPath, "utf8");
-  const transformed = source.replaceAll("__PSETTER_BUILD_CHANNEL__", channel);
+  const transformed = source.replaceAll("__PSETTER_BUILD_CHANNEL__", buildChannel);
   if (transformed.includes("__PSETTER_BUILD_CHANNEL__")) {
     throw new Error(`Unresolved build channel in ${relativePath}`);
   }
@@ -135,6 +147,7 @@ if (isDev) {
 } else {
   await rm(archive, { force: true });
   await createDeterministicZip(packageDir, archive);
+  await assertPublicZip(archive, "community ZIP");
   console.log(`Packaged production extension at ${archive}`);
 }
 

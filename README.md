@@ -1,12 +1,16 @@
 # Psetter™
 
-Psetter is a Chrome extension that adds a visual math editor to compatible MITx
-answer fields. It lets you enter math visually and converts it to the syntax
-expected by MITx, entirely in your browser. Psetter does not submit answers
-automatically.
+Psetter is a Chrome extension for MITx that adds a visual math editor directly
+to compatible answer fields. Instead of translating mathematical expressions
+into MITx syntax by hand, you can build them visually and let Psetter convert
+them into the input format MITx expects.
 
-This repository contains the complete source for the Psetter browser extension,
-including its build scripts and tests. Original Psetter code is licensed under
+Fractions, roots, exponents, functions, symbols, and complex expressions can be
+entered as they look, making math input faster and more intuitive. Parsing and
+conversion happen locally in your browser.
+
+This repository contains the complete source code for the Psetter browser
+extension, including its build scripts and tests. Original Psetter code is licensed under
 the MIT License. Bundled third-party components remain under their respective
 licenses; see
 [`psetter-extension/THIRD_PARTY_NOTICES.txt`](psetter-extension/THIRD_PARTY_NOTICES.txt).
@@ -33,9 +37,9 @@ to reproduce and inspect the extension.
   warnings, and emergency disable flags.
 - Remote parser rules, regular expressions, commands, JavaScript, WebAssembly,
   templates, and other interpreted logic are rejected and unsupported.
-- Feedback is opt-in. It opens as an isolated dialog on MITx and as the hosted
-  Feedback page when invoked elsewhere. The proprietary hosted form cannot
-  access the course page or extension APIs.
+- Feedback infrastructure is intentionally absent from the community build.
+  The separate store distribution may enable its hosted feedback flow; the
+  editor remains fully local when that infrastructure is unavailable.
 
 See [`docs/REMOTE_CONFIG.md`](docs/REMOTE_CONFIG.md) for the exact remote-data
 boundary.
@@ -69,25 +73,29 @@ reload the unpacked extension after changes.
 ```sh
 pnpm install --frozen-lockfile
 pnpm extension:check
-pnpm extension:reproducible
+pnpm extension:reproducible:community
 ```
 
-The production archive is written to `dist/psetter-v<version>.zip`. The ZIP is
-created from an explicit allowlist with stable file ordering, timestamps, and
-permissions. The reproducibility check builds it twice and compares SHA-256
-digests.
+The community archive is written to `dist/psetter-v<version>-community.zip`.
+The ZIP is created from an explicit allowlist with stable file ordering,
+timestamps, and permissions. The reproducibility check builds it twice and
+compares SHA-256 digests. Store packaging is a separate channel and currently
+fails closed until its reviewed Store overlay is supplied.
 
-Final production release preparation additionally requires a clean Git worktree
-and an exact `v<manifest-version>` tag on `HEAD`:
+Final community release preparation additionally requires a clean Git worktree,
+an explicit channel, and an exact `v<manifest-version>` tag on `HEAD`:
 
 ```sh
-pnpm release:prepare
+pnpm release:candidate:community
+pnpm release:prepare:community
 ```
 
-That command writes a release record containing the final tag, commit, artifact
-name, and SHA-256 digest of the production ZIP. It does not publish or upload
-anything. See [`docs/RELEASE.md`](docs/RELEASE.md) for the public build and
-release provenance procedure.
+The candidate command writes an ignored, generated attestation under `dist/`.
+The final command reproduces the tagged artifact and fails unless its build
+identity and SHA-256 match that candidate. It writes a release record but does
+not publish or upload anything. Bare `release:prepare` is intentionally invalid;
+choose `:community` or `:store` explicitly. See [`docs/RELEASE.md`](docs/RELEASE.md)
+for the public build and release provenance procedure.
 
 ## Repository layout
 

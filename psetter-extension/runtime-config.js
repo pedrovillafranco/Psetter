@@ -1,5 +1,6 @@
-// Shared extension configuration. This file is loaded by the popup/feedback
-// pages and bundled into the content script entry.
+// Shared community-build configuration. This file is loaded by extension pages
+// and bundled into the content script entry. Store-only infrastructure is
+// supplied by the separate store build and is intentionally absent here.
 globalThis.__psetterConfig = Object.freeze({
   settingsKey: "psetMathSettings",
   symbolsOpenKey: "psetMathSymbolsOpen",
@@ -7,9 +8,12 @@ globalThis.__psetterConfig = Object.freeze({
   developerMessageReadKey: "psetterDeveloperMessageReadId",
   restoreHintKey: "psetterRestoreHintV1",
   remoteConfigKey: "psetterRemoteConfigV1",
-  remoteConfigUrl: "https://feedback.psetter.villafran.co/config/v1.json",
+  remoteConfigUrl: "",
   remoteConfigTtlMs: 5 * 60 * 1000,
-  feedbackPageUrl: "https://feedback.psetter.villafran.co/feedback",
+  feedbackPageUrl: "",
+  feedbackPageOrigin: "",
+  feedbackHostPath: "",
+  feedbackEnabled: false,
   buildChannel: "__PSETTER_BUILD_CHANNEL__",
   mitxHostname: "mitx.mit.edu",
 });

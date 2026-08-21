@@ -1,3 +1,13 @@
+import {
+  PSETTER_FUNCTION_NAMES,
+  PSETTER_GREEK_LATEX,
+  createPsetterContextItem,
+  dedupePsetterContextItems,
+  extractPsetterMathIdentifiers,
+  isPsetterInstructionalText,
+  normalizePsetterMathText,
+} from "./semantic-model.js";
+
 "use strict";
 (() => {
   var Ln = [
@@ -49,7 +59,7 @@
       symbolsOpenKey: "psetMathSymbolsOpen",
       usageKey: "psetMathUsage",
       restoreHintKey: "psetterRestoreHintV1",
-      feedbackPageUrl: "https://feedback.psetter.villafran.co/feedback",
+      feedbackEnabled: false,
       mitxHostname: "mitx.mit.edu",
     },
     PSETTER_REMOTE_API = globalThis.__psetterRemoteConfig,
@@ -64,6 +74,7 @@
     psetterSymbolsOpenKey = PSETTER_CONFIG.symbolsOpenKey,
     psetterUsageKey = PSETTER_CONFIG.usageKey,
     psetterUsageQueue = Promise.resolve(),
+    psetterSettingsQueue = Promise.resolve(),
     psetterRestoreHintKey = PSETTER_CONFIG.restoreHintKey,
     psetterRestoreHintQueue = Promise.resolve(),
     psetterIsPackagedDemo =
@@ -108,6 +119,16 @@
       return !1;
     }
   }
+  function isPsetterDirectChildWindow(source) {
+    if (!source) return !1;
+    try {
+      return [...document.querySelectorAll("iframe, frame")].some(
+        (frame) => frame.contentWindow === source,
+      );
+    } catch {
+      return !1;
+    }
+  }
   function isContextInvalidatedError(e) {
     return /Extension context invalidated/i.test(
       e instanceof Error ? e.message : String(e ?? ""),
@@ -132,8 +153,56 @@
     window.removeEventListener("unhandledrejection", psetterUnhandledRejection);
     window.removeEventListener("error", psetterWindowError, !0);
   };
+  var psetterLaunchRuntime;
+  function clearPsetterOwnershipStandby() {
+    globalThis.__psetterOwnershipStandbyCleanup?.();
+  }
+  function armPsetterOwnershipStandby(runtimeOwner) {
+    clearPsetterOwnershipStandby();
+    let stopped = !1,
+      observer,
+      ownerAttribute = "data-psetter-runtime-owner",
+      ownerEvent = "psetter-runtime-owner-changed";
+    const cleanup = () => {
+        if (stopped) return;
+        stopped = !0;
+        document.removeEventListener(ownerEvent, attemptOwnership);
+        observer?.disconnect();
+        if (globalThis.__psetterOwnershipStandbyCleanup === cleanup)
+          delete globalThis.__psetterOwnershipStandbyCleanup;
+      },
+      attemptOwnership = () => {
+        if (stopped || !psetterLaunchRuntime) return;
+        let currentOwner = document.documentElement.getAttribute(ownerAttribute);
+        // A lexicographically smaller extension ID remains the deterministic
+        // winner. If its DOM lease disappears, the next waiting copy may
+        // restart without retaining any controller or page listener state.
+        if (
+          currentOwner &&
+          currentOwner !== runtimeOwner &&
+          currentOwner.localeCompare(runtimeOwner) < 0
+        )
+          return;
+        cleanup();
+        psetterLaunchRuntime();
+      };
+    document.addEventListener(ownerEvent, attemptOwnership);
+    observer = new MutationObserver((records) => {
+      records.some((record) => record.attributeName === ownerAttribute) &&
+        attemptOwnership();
+    });
+    observer.observe(document.documentElement, {
+      attributes: !0,
+      attributeFilter: [ownerAttribute],
+    });
+    globalThis.__psetterOwnershipStandbyCleanup = cleanup;
+    queueMicrotask(attemptOwnership);
+  }
   function Vn(e) {
-    return e === "numeric" || e === "symbolic" || e === "literal";
+    // Literal mode is display-oriented legacy state, not MITx parser syntax.
+    // Keep the renderer available for diagnostics, but never restore it as a
+    // persisted write mode.
+    return e === "numeric" || e === "symbolic";
   }
   function zi(e) {
     let t = e && typeof e == "object" ? e : {},
@@ -215,15 +284,22 @@
       return qe;
     }
   }
-  async function savePsetterSettings(e) {
-    try {
-      let i = getExtensionApi();
-      return i?.storage?.local?.set
-        ? (await i.storage.local.set({ [at]: e }), !0)
-        : !1;
-    } catch {
-      return !1;
-    }
+  function savePsetterSettings(e, isCurrent = null) {
+    const snapshot = zi(e);
+    psetterSettingsQueue = psetterSettingsQueue
+      .catch(() => {})
+      .then(async () => {
+        if (isCurrent && !isCurrent()) return !0;
+        try {
+          let i = getExtensionApi();
+          return i?.storage?.local?.set
+            ? (await i.storage.local.set({ [at]: snapshot }), !0)
+            : !1;
+        } catch {
+          return !1;
+        }
+      });
+    return psetterSettingsQueue;
   }
   async function loadPsetterSymbolsPreference() {
     try {
@@ -299,31 +375,7 @@
       "||": 3,
       "^": 5,
     },
-    Fi = {
-      alpha: "\\alpha",
-      beta: "\\beta",
-      gamma: "\\gamma",
-      delta: "\\delta",
-      epsilon: "\\epsilon",
-      zeta: "\\zeta",
-      eta: "\\eta",
-      theta: "\\theta",
-      iota: "\\iota",
-      kappa: "\\kappa",
-      lambda: "\\lambda",
-      mu: "\\mu",
-      nu: "\\nu",
-      xi: "\\xi",
-      omicron: "o",
-      rho: "\\rho",
-      sigma: "\\sigma",
-      tau: "\\tau",
-      upsilon: "\\upsilon",
-      phi: "\\phi",
-      chi: "\\chi",
-      psi: "\\psi",
-      omega: "\\omega",
-    },
+    Fi = PSETTER_GREEK_LATEX,
     Rt = class {
       constructor(t) {
         this.source = t;
@@ -335,7 +387,15 @@
         if (this.position >= this.source.length)
           return { kind: "eof", value: "" };
         let t = this.source.slice(this.position),
-          i = t.match(/^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/);
+          metric = t.match(
+            /^((?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)([dcmunpkMGT])(?![A-Za-z0-9_])/,
+          );
+        if (metric)
+          return (
+            (this.position += metric[0].length),
+            { kind: "metric", value: metric[1], affix: metric[2] }
+          );
+        let i = t.match(/^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/);
         if (i)
           return (
             (this.position += i[0].length),
@@ -398,6 +458,7 @@
           // digit into the exponent (`b^24`).
           let r =
             this.current.kind === "number" ||
+            this.current.kind === "metric" ||
             this.current.kind === "identifier" ||
             this.current.kind === "lparen";
           if (!r || Mi["*"] < t) break;
@@ -418,6 +479,10 @@
           };
         if (this.current.kind === "number")
           return { type: "number", value: this.advance().value };
+        if (this.current.kind === "metric") {
+          let metric = this.advance();
+          return { type: "metric", value: metric.value, affix: metric.affix };
+        }
         if (this.current.kind === "identifier") {
           let t = this.advance().value;
           if (this.current.kind === "lparen") {
@@ -458,16 +523,26 @@
     if (e === "infty" || e === "infinity") return "\\infty";
     if (Fi[e]) return Fi[e];
     let t = e.match(/^([A-Za-z][A-Za-z0-9]*)_([A-Za-z0-9]+)$/);
-    return t ? `${t[1]}_{${t[2]}}` : e;
+    if (t)
+      return `${t[1].length > 1 ? `\\operatorname{${t[1]}}` : t[1]}_{${t[2]}}`;
+    return /^[A-Za-z][A-Za-z0-9_]+$/.test(e) && e.length > 1
+      ? `\\operatorname{${e}}`
+      : e;
   }
   function Ae(e) {
     if (e.type === "number") return { latex: e.value, precedence: 6 };
+    if (e.type === "metric")
+      // Keep native MITx metric provenance inside MathQuill. A plain editor
+      // token such as `2m` means visual adjacency/multiplication; only a
+      // metric atom parsed from the existing native answer receives this
+      // unobtrusive marker and may serialize back to attached MITx syntax.
+      return { latex: `${e.value}\\mathrm{${e.affix}}`, precedence: 6 };
     if (e.type === "symbol") return { latex: jn(e.name), precedence: 6 };
     if (e.type === "percent")
       return { latex: `${de(Ae(e.value), 6)}\\%`, precedence: 6 };
     if (e.type === "unary") {
       let a = Ae(e.value);
-      return { latex: `${e.operator}${de(a, 4)}`, precedence: 4 };
+      return { latex: `${e.operator}${de(a, 5)}`, precedence: 4 };
     }
     if (e.type === "call") {
       let a = e.args.map((p) => Ae(p).latex);
@@ -489,9 +564,10 @@
           "arccos",
           "arctan",
           "ln",
+          "log",
           "exp",
         ]),
-        o = e.name === "log10" ? "log" : e.name === "log2" ? "log_2" : e.name;
+        o = e.name;
       return {
         latex: `${l.has(o) ? `\\${o}` : `\\operatorname{${o}}`}(${a.join(",")})`,
         precedence: 6,
@@ -505,7 +581,11 @@
     if (e.operator === "^")
       return { latex: `${de(t, r)}^{${i.latex}}`, precedence: r };
     if (e.operator === "*")
-      return { latex: `${de(t, r)}\\cdot ${de(i, r)}`, precedence: r };
+      // `\\cdot 10^{n}` is parsed as scientific notation by the bundled
+      // LaTeX reader (its exponent-product token).  Use an explicit `*`
+      // operator when hydrating native MITx syntax so multiplication remains
+      // multiplication and numeric lexical spelling can round-trip safely.
+      return { latex: `${de(t, r)}*${de(i, r)}`, precedence: r };
     let s =
       {
         "<=": "\\le",
@@ -14052,7 +14132,8 @@
   function Mn(e) {
     return Array.isArray(e) ? e : null;
   }
-  function Pt(e, t) {
+  function Pt(e, t, r) {
+    if (r?.has?.(e)) return r.get(e);
     if (e === "Pi") return "pi";
     if (e === "EulerGamma") return "gamma";
     if (e === "ExponentialE" || e === "EulerE") return "e";
@@ -14089,6 +14170,18 @@
     }
     return rt(e) ? e.sym : xi(e) ? e.str : e;
   }
+  // math.js keeps the source spelling of a numeric literal on its `num`
+  // node.  Do not eagerly coerce that node through Number/parseFloat: doing
+  // so discards lexical precision (for example 0.50 or 00343.400), which is
+  // meaningful to chemistry problems even when the numeric value is equal.
+  function psetterNumericLexeme(e) {
+    if (!it(e)) return null;
+    let t = e.num;
+    t = typeof t == "string" ? t : t == null ? "" : String(t);
+    return /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(t)
+      ? t
+      : null;
+  }
   function Dn(e, t) {
     return e.map((i) => q(i, t).text);
   }
@@ -14109,9 +14202,12 @@
     );
   }
   function q(e, t) {
+    let rawNumeric = psetterNumericLexeme(e);
+    if (rawNumeric !== null)
+      return { text: rawNumeric, precedence: v.atom };
     if (((e = eii(e)), Number.isNaN(e)))
       return (
-        t.warnings.push(
+        t.errors.push(
           "Non-finite numbers are not supported by the standard MITx calculator.",
         ),
         { text: "NaN", precedence: v.atom }
@@ -14124,13 +14220,22 @@
     if (typeof e == "number")
       return (
         Number.isFinite(e) ||
-          t.warnings.push(
+          t.errors.push(
             "Non-finite numbers are not supported by the standard MITx calculator.",
           ),
         { text: String(e), precedence: v.atom }
       );
-    if (typeof e == "string")
-      return { text: Pt(e, t.warnings), precedence: v.atom };
+    if (typeof e == "string") {
+      if (
+        e === "PositiveInfinity" ||
+        e === "NegativeInfinity" ||
+        e === "ComplexInfinity"
+      ) {
+        t.errors.push("Infinity is not supported by the standard MITx calculator.");
+        return { text: "", precedence: v.atom };
+      }
+      return { text: Pt(e, t.warnings, t.symbolOverrides), precedence: v.atom };
+    }
     if (!Array.isArray(e))
       return (
         t.errors.push("The parser returned an unsupported expression object."),
@@ -14143,6 +14248,12 @@
         t.errors.push("Part of the expression could not be parsed."),
         { text: "", precedence: v.atom }
       );
+    if (t.symbolOverrides?.has(i)) {
+      let a = t.symbolOverrides.get(i);
+      if (r.length === 0) return { text: a, precedence: v.atom };
+      let l = r.map((o) => L(q(o, t), v.multiply));
+      return { text: [a, ...l].join("*"), precedence: v.multiply };
+    }
     if (i === "Delimiter")
       return { text: `(${q(r[0] ?? null, t).text})`, precedence: v.atom };
     if (i === "Add") {
@@ -14181,8 +14292,25 @@
       ) {
         let l = Mn(r[1] ?? null);
         if (l && Ft(l) === "Delimiter") {
-          let o = Pt(r[0], t.warnings);
-          return Ee(o, [l[1] ?? null], t);
+          let o = Pt(r[0], t.warnings, t.symbolOverrides),
+            u = Mn(l[1] ?? null),
+            p = u && Ft(u) === "Sequence" ? u.slice(1) : [l[1] ?? null];
+          if (t.symbolOverrides?.has(r[0])) {
+            if (p.length !== 1) {
+              t.unsafe.push(`${r[0]} is a variable and cannot safely own multiple call arguments.`);
+              return { text: "", precedence: v.multiply };
+            }
+            let u = q(p[0], t);
+            return { text: `${o}*${L(u, v.multiply)}`, precedence: v.multiply };
+          }
+          if (
+            t.allowedFunctions?.has(r[0]) ||
+            t.allowedFunctions?.has(r[0].toLowerCase()) ||
+            t.allowedFunctions?.has(o)
+          )
+            return Ee(o, p, t);
+          t.unsafe.push(`${r[0]} is an unsupported parser operation.`);
+          return Ee(o, p, t);
         }
       }
       return {
@@ -14210,6 +14338,7 @@
     if (i === "Sqrt") return Ee("sqrt", [r[0] ?? null], t);
     if (i === "Root") {
       t.warnings.push("An nth root was converted to exponent form.");
+      t.unsafe.push("Nth-root conversion is not proven equivalent for every MITx grader domain.");
       let a = q(r[0] ?? null, t),
         l = q(r[1] ?? null, t);
       return {
@@ -14217,11 +14346,7 @@
         precedence: v.power,
       };
     }
-    if (i === "Log")
-      return (
-        t.warnings.push("Desmos log(x) was translated as base-10 log10(x)."),
-        Ee("log10", [r[0] ?? null], t)
-      );
+    if (i === "Log") return Ee("log", [r[0] ?? null], t);
     if (i === "Lg") return Ee("log10", [r[0] ?? null], t);
     if (i === "Lb") return Ee("log2", [r[0] ?? null], t);
     let n = On[i];
@@ -14250,6 +14375,7 @@
       t.warnings.push(
         "\xB1 cannot represent two answers in a standard MITx formula field. Choose one sign or enter answers separately.",
       );
+      t.unsafe.push("Plus/minus notation is ambiguous in a single MITx answer field.");
       let a = q(r.at(-1) ?? null, t);
       return { text: L(a, v.unary), precedence: v.unary };
     }
@@ -14257,6 +14383,7 @@
       t.warnings.push(
         "Lists and tuples are only accepted by some custom graders.",
       );
+      t.unsafe.push("List and tuple conversion depends on grader-specific semantics.");
       let a = Dn(r, t),
         l = i === "List" ? ["[", "]"] : ["(", ")"];
       return { text: `${l[0]}${a.join(",")}${l[1]}`, precedence: v.atom };
@@ -14286,19 +14413,28 @@
       i === "Sgn"
     ) {
       let a = i === "Sgn" ? "sign" : i.toLowerCase();
+      if (t.allowedFunctions?.has(a)) return Ee(a, r, t);
       return (
         t.warnings.push(
           `${i} is not a standard MITx calculator function; it may work only in a custom grader.`,
         ),
+        t.unsafe.push(`${i} has no proven standard MITx function semantics.`),
         Ee(a, r, t)
       );
     }
     if (i) {
-      let a = Pt(i, t.warnings);
+      let a = Pt(i, t.warnings, t.symbolOverrides);
+      if (
+        t.allowedFunctions?.has(i) ||
+        t.allowedFunctions?.has(i.toLowerCase()) ||
+        t.allowedFunctions?.has(a)
+      )
+        return Ee(a, r, t);
       return (
         t.warnings.push(
-          `${i} is not in the standard MITx function list; it may require a custom grader.`,
+          `Psetter does not currently support ${i} without question-provided function semantics.`,
         ),
+        t.unsafe.push(`${i} is an unsupported parser operation.`),
         Ee(a, r, t)
       );
     }
@@ -14307,48 +14443,27 @@
       { text: "", precedence: v.atom }
     );
   }
-  var psetterContextAliasCache = new WeakMap();
-  var psetterContextFunctionNames = new Set([
-    "sin",
-    "cos",
-    "tan",
-    "sec",
-    "csc",
-    "cot",
-    "asin",
-    "acos",
-    "atan",
-    "arcsin",
-    "arccos",
-    "arctan",
-    "sinh",
-    "cosh",
-    "tanh",
-    "ln",
-    "log",
-    "log10",
-    "log2",
-    "sqrt",
-  ]);
-  // Some MathLive symbols have a named semantic node even when the user
-  // entered a single-letter variable. MITx questions commonly use G for the
-  // gravitational constant, while the parser's built-in meaning for bare G
-  // is CatalanConstant. Keep this mapping data-driven so additional parser
-  // collisions can be added without changing the editor or field lifecycle.
-  var psetterReservedSymbolAliases = [
-    { parserName: "CatalanConstant", sourceName: "G" },
-    { parserName: "GoldenRatio", sourceName: "phi", latexNames: ["\\phi", "\\varphi"] },
-    { parserName: "EulerGamma", sourceName: "gamma", latexNames: ["\\gamma"] },
-  ];
+  var psetterContextFunctionNames = PSETTER_FUNCTION_NAMES;
+  var psetterNativeAnswerSelector = [
+    '.formulaequationinput input[type="text"]',
+    '.text-input-dynamath input[type="text"]',
+    '.capa_inputtype.textline input.math[type="text"]',
+    'input[type="text"][id^="input_"]',
+  ].join(",");
   function psetterProblemSourceRoot(e) {
     if (!e) return null;
-    for (let t = e; t && t !== document.body; t = t.parentElement)
-      if (t.getAttribute?.("data-content")) return t;
-    return (
-      e.closest?.(".problem, .problems-wrapper, .vert, .xblock, .problem-block") ??
-      e.parentElement ??
-      null
+    let t = e.closest?.(
+      ".problem, .problem-block, .capa, [data-usage-id][class*='problem']",
     );
+    if (t && t.querySelectorAll(psetterNativeAnswerSelector).length === 1) return t;
+    let i = null;
+    for (let r = e.parentElement; r && r !== document.body; r = r.parentElement) {
+      let n = r.querySelectorAll?.(psetterNativeAnswerSelector).length ?? 0;
+      if (n > 1) break;
+      if (n === 1) i = r;
+      if (r.matches?.("form, [data-content]") && n === 1) break;
+    }
+    return i;
   }
   function restorePsetterMultiLetterSymbols(e, t, n) {
     if (typeof e != "string" || typeof t != "string" || !t) return t;
@@ -14374,7 +14489,10 @@
         a = new RegExp(`(^|[^A-Za-z0-9_])${c}(?=[^A-Za-z0-9_]|$)`).test(e);
       }
       if (!a) continue;
-      let l = s.split("").join("\\*");
+      let subscripted = s.match(/^([A-Za-z][A-Za-z0-9]*)(?:_([A-Za-z0-9]+))?$/),
+        l = subscripted
+          ? `${subscripted[1].split("").join("\\*")}${subscripted[2] ? `_${subscripted[2]}` : ""}`
+          : s.split("").join("\\*");
       i = i.replace(
         new RegExp(`(^|[^A-Za-z0-9_])${l}(?=[^A-Za-z0-9_]|$)`, "g"),
         `$1${s}`,
@@ -14382,76 +14500,47 @@
     }
     return i;
   }
-  function restorePsetterReservedSymbols(e, t) {
-    if (typeof e != "string" || typeof t != "string" || !e || !t) return t;
-    let i = t;
-    for (let r of psetterReservedSymbolAliases) {
-      let n = r.sourceName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-        s = new RegExp(`(^|[^A-Za-z0-9_])${n}(?=[^A-Za-z0-9_]|$)`, "g"),
-        a = e.match(s)?.length ?? 0;
-      // MathQuill can wrap an uppercase single-letter variable in a
-      // semantic command (for example \\operatorname{G}). Count that form
-      // as the same source symbol, while still requiring a standalone G so
-      // identifiers such as Gforce are not changed.
-      if (a === 0 && Array.isArray(r.latexNames)) {
-        for (let u of r.latexNames) {
-          let d = new RegExp(u.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
-          a += e.match(d)?.length ?? 0;
-        }
-      }
-      if (a === 0) {
-        let l = new RegExp(
-          `\\\\(?:operatorname|mathrm|mathit)\\{${n}\\}`,
-          "g",
-        );
-        a = e.match(l)?.length ?? 0;
-      }
-      if (a === 0) continue;
-      let l = new RegExp(`\\b${r.parserName}\\b`, "g"),
-        o = 0;
-      i = i.replace(l, (u) => (o++ < a ? r.sourceName : u));
-    }
-    return i;
+  function psetterParserIdentity(e) {
+    try {
+      let t = eii(Kl.parse(nii(e)));
+      if (typeof t == "string") return t;
+      if (Array.isArray(t) && t.length === 1 && typeof t[0] == "string") return t[0];
+    } catch {}
+    return null;
   }
-  function discoverPsetterContextAliases(e) {
-    let t = psetterProblemSourceRoot(e);
-    if (!t) return new Set();
-    let i = t.getAttribute?.("data-content") || t.innerHTML || "",
-      r = psetterContextAliasCache.get(t);
-    if (r?.source === i) return r.aliases;
-    let n = new Set(),
-      s = (a) => {
-        typeof a == "string" &&
-          /^[A-Za-z][A-Za-z0-9_]*$/.test(a) &&
-          a.length >= 2 &&
-          !psetterContextFunctionNames.has(a.toLowerCase()) &&
-          n.add(a);
-      };
-    // MITx's authored problem HTML uses this form for vector aliases such as
-    // \hat{i} ("hati"). It is scoped to the current problem, never global.
-    for (let a of i.matchAll(
-      /(?:\[mathjaxinline\][\s\S]*?\[\/mathjaxinline\]|\\\([\s\S]*?\\\))\s*\(\s*["“”']([A-Za-z][A-Za-z0-9_]*)["“”']\s*\)/g,
-    ))
-      s(a[1]);
-    // MITx's current problem markup puts the accepted spelling in a code
-    // element immediately before the explanation, for example
-    // `<code>hati</code> for [mathjaxinline]\\hat{\\mathbf{i}}[/mathjaxinline]`.
-    // Read that authored spelling directly instead of inferring it from
-    // rendered MathJax.
-    for (let a of i.matchAll(
-      /<code\b[^>]*>\s*([A-Za-z][A-Za-z0-9_]*)\s*<\/code>\s*(?:for|as)\b/gi,
-    ))
-      s(a[1]);
-    // Some problems explicitly tell students what spelling to type, e.g.
-    // “simply type in \"v_0\"”. Preserve that spelling as metadata too.
-    for (let a of i.matchAll(
-      /(?:type\s+in|enter\s+(?:your\s+)?answer\s+as)\s*["“”']([A-Za-z][A-Za-z0-9_]*)["“”']/gi,
-    ))
-      s(a[1]);
-    psetterContextAliasCache.set(t, { source: i, aliases: n });
-    return n;
+  function discoverPsetterSemanticContext(e) {
+    let t = qn(e),
+      i = new Set(),
+      r = new Set(),
+      n = new Map(),
+      authoritativeSymbols = new Map();
+    for (let s of t) {
+      if (s.semanticKind === "function") {
+        r.add(s.outputName);
+        continue;
+      }
+      if (
+        (s.semanticKind === "alias" || s.semanticKind === "variable") &&
+        s.outputName?.length >= 2
+      )
+        i.add(s.outputName);
+      authoritativeSymbols.set(s.outputName, s.latex);
+      for (let a of [s.latex, s.outputName]) {
+        let l = psetterParserIdentity(a);
+        l && !n.has(l) && n.set(l, s.outputName);
+      }
+    }
+    return {
+      items: t,
+      aliases: i,
+      functions: r,
+      symbolOverrides: n,
+      authoritativeSymbols,
+    };
   }
   function X(e, t) {
+    let rawNumeric = psetterNumericLexeme(e);
+    if (rawNumeric !== null) return { text: rawNumeric, precedence: v.atom };
     if (((e = eii(e)), Number.isNaN(e))) return { text: "NaN", precedence: v.atom };
     if (e === null) return { text: "", precedence: v.atom };
     if (typeof e == "number") return { text: String(e), precedence: v.atom };
@@ -14461,7 +14550,11 @@
         return { text: "\u221E", precedence: v.atom };
       if (e === "NegativeInfinity")
         return { text: "\u2212\u221E", precedence: v.atom };
-      let a = Pt(e, t);
+      let a = Pt(
+        e,
+        Array.isArray(t) ? t : t.warnings,
+        Array.isArray(t) ? void 0 : t.symbolOverrides,
+      );
       return { text: Pn[a] ?? Pn[e] ?? a, precedence: v.atom };
     }
     if (!Array.isArray(e)) return { text: "", precedence: v.atom };
@@ -14587,16 +14680,203 @@
       " \\rceil",
     );
   }
-  function Rn(e, t, aliases = new Set()) {
+  function psetterMitxLexicalOverrides() {
+    let overrides = new Map(),
+      authoredSymbols = [["G", "G"]];
+    for (let [name, latex] of Object.entries(PSETTER_GREEK_LATEX))
+      authoredSymbols.push([latex, name]);
+    for (let [source, output] of authoredSymbols) {
+      let identity = psetterParserIdentity(source);
+      identity && overrides.set(identity, output);
+    }
+    return overrides;
+  }
+  function normalizePsetterConversionContext(e) {
+    let lexicalOverrides = psetterMitxLexicalOverrides();
+    if (e instanceof Set)
+      return {
+        aliases: e,
+        functions: new Set(),
+        symbolOverrides: lexicalOverrides,
+        authoritativeSymbols: new Map(),
+      };
+    return {
+      aliases: e?.aliases instanceof Set ? e.aliases : new Set(),
+      functions: e?.functions instanceof Set ? e.functions : new Set(),
+      symbolOverrides:
+        e?.symbolOverrides instanceof Map
+          ? new Map([...lexicalOverrides, ...e.symbolOverrides])
+          : lexicalOverrides,
+      authoritativeSymbols:
+        e?.authoritativeSymbols instanceof Map ? e.authoritativeSymbols : new Map(),
+      items: Array.isArray(e?.items) ? e.items : [],
+    };
+  }
+  function psetterConversionResult(e, t, i, r, n = []) {
+    let s = r.length > 0 ? "unsupported" : n.length > 0 ? "ambiguous" : "safe";
+    return {
+      output: e,
+      warnings: Fn(t),
+      errors: Fn(r),
+      safetyReasons: Fn(n),
+      status: s,
+      isSupported: s === "safe",
+    };
+  }
+  function psetterLatexSafetyIssue(e, t) {
+    let i = new Set([
+      "left", "right", "frac", "sqrt", "operatorname", "mathrm", "mathit",
+      "mathbf", "cdot", "times", "sin", "cos", "tan", "sec", "csc", "cot",
+      "sinh", "cosh", "tanh", "sech", "csch", "coth", "arcsin", "arccos",
+      "arctan", "arcsec", "arccsc", "arccot", "arcsinh", "arccosh", "arctanh",
+      "arcsech", "arccsch", "arccoth", "ln", "log",
+      "exp", "pi", "alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta",
+      "varepsilon", "theta", "vartheta", "iota", "kappa", "lambda", "mu", "nu",
+      "xi", "rho", "sigma", "tau", "upsilon", "phi", "varphi", "chi", "psi",
+      "omega", "Gamma", "Delta",
+      "Theta", "Lambda", "Xi", "Pi", "Sigma", "Upsilon", "Phi", "Psi", "Omega",
+      "le", "leq", "ge", "geq", "ne", "neq", "approx",
+    ]);
+    for (let r of e.matchAll(/\\([A-Za-z]+)/g))
+      if (!i.has(r[1])) return `Unsupported TeX command \\${r[1]}.`;
+    if (/[^\x00-\x7Fα-ωΑ-Ωπ×·−≤≥≠≈]/u.test(e))
+      return "Unsupported Unicode notation.";
+    for (let r of e.matchAll(/(?:\\operatorname\s*\{([A-Za-z][A-Za-z0-9_]*)\}|\b([A-Za-z][A-Za-z0-9_]{1,}))\s*(?:\\left\s*)?\(/g)) {
+      let n = r[1] ?? r[2];
+      if (
+        !t.functions.has(n) &&
+        !t.functions.has(n.toLowerCase()) &&
+        !PSETTER_FUNCTION_NAMES.has(n.toLowerCase()) &&
+        !t.aliases.has(n)
+      )
+        return `Function-like identifier ${n} has no authoritative semantics.`;
+    }
+    let functionNames = [...PSETTER_FUNCTION_NAMES].sort(
+        (left, right) => right.length - left.length,
+      ),
+      bareFunctionPattern = new RegExp(
+      `(?:\\\\(?:${functionNames.join("|")})(?![A-Za-z0-9])|\\\\operatorname\\s*\\{(?:${functionNames.join("|")})\\})(?!\\s*(?:\\\\left\\s*)?[\\({])`,
+      "i",
+    ),
+      bareAsciiFunctionPattern = new RegExp(
+        `(^|[+\\-*/^=,(\\s])(?:${functionNames.join("|")})(?=$|[+\\-*/^=,)\\s])`,
+        "i",
+      );
+    if (bareFunctionPattern.test(e) || bareAsciiFunctionPattern.test(e))
+      return "A function name is incomplete until it has a parenthesized argument.";
+    return null;
+  }
+  function restorePsetterAuthoritativeFunctions(e, t) {
+    let i = e;
+    for (let r of [...t].sort((n, s) => s.length - n.length)) {
+      for (let suffix of ["arcsin", "arccos", "arctan", "sinh", "cosh", "tanh", "sin", "cos", "tan", "sec", "csc", "cot", "log", "ln", "exp"]) {
+        if (!r.endsWith(suffix) || r === suffix) continue;
+        let prefix = r.slice(0, -suffix.length).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+          splitCall = new RegExp(
+            `(^|[^A-Za-z0-9_\\\\])${prefix}\\\\${suffix}(?=\\s*(?:\\\\left\\s*)?\\()`,
+            "g",
+          );
+        i = i.replace(splitCall, `$1\\operatorname{${r}}`);
+      }
+      let functionName = r.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+        rawCall = new RegExp(
+          `(^|[^A-Za-z0-9_\\\\])${functionName}(?=\\s*(?:\\\\left\\s*)?\\()`,
+          "g",
+        );
+      i = i.replace(rawCall, `$1\\operatorname{${r}}`);
+      let n = r.match(/^([A-Za-z]+)([0-9]+)$/);
+      if (!n) continue;
+      let s = n[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+        a = n[2].replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+        l = new RegExp(
+          `\\\\(?:operatorname\\{)?${s}(?:\\})?\\s*(?:_\\{?${a}\\}?|${a})\\s*(?=\\\\left\\s*\\(|\\()`,
+          "g",
+        );
+      i = i.replace(l, `\\operatorname{${r}}`);
+    }
+    return i;
+  }
+  function psetterPlaceholderName(e) {
+    let t = "";
+    for (let i = e; i >= 0; i = Math.floor(i / 26) - 1)
+      t = String.fromCharCode(97 + (i % 26)) + t;
+    return `psetterctx${t}`;
+  }
+  function protectPsetterNativeMetricAffixes(e, symbolOverrides) {
+    let overrides = new Map(symbolOverrides),
+      index = 0;
+    let source = e.replace(
+      /(^|[^A-Za-z0-9_.])((?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\\mathrm\s*\{\s*([dcmunpkMGT])\s*\}/g,
+      (match, prefix, numeric, affix) => {
+        let name, identity;
+        do {
+          name = `psettermetric${psetterPlaceholderName(index++).slice("psetterctx".length)}`;
+          identity = psetterParserIdentity(`\\operatorname{${name}}`) ?? name;
+        } while (overrides.has(identity));
+        overrides.set(identity, `${numeric}${affix}`);
+        return `${prefix}\\operatorname{${name}}`;
+      },
+    );
+    return { source, symbolOverrides: overrides };
+  }
+  function protectPsetterAuthoritativeSymbols(e, t) {
+    let i = new Map(t.symbolOverrides),
+      r = new Map(t.authoritativeSymbols),
+      n = new Map(),
+      s = 0;
+    let placeholderFor = (a) => {
+      if (n.has(a)) return n.get(a);
+      let l = psetterPlaceholderName(s++),
+        o = `\\operatorname{${l}}`,
+        u = psetterParserIdentity(o) ?? l;
+      i.set(u, a);
+      n.set(a, o);
+      return o;
+    };
+    let tokenPattern = /\\operatorname\{[A-Za-z][A-Za-z0-9_]*\}(?:_\{?[A-Za-z0-9]+\}?)?|\\[A-Za-z]+(?:_\{?[A-Za-z0-9]+\}?)?|[A-Za-z][A-Za-z0-9_]*(?:_\{?[A-Za-z0-9]+\}?)?/g;
+    let source = e.replace(tokenPattern, (a) => {
+      let l = a
+        .replace(/^\\operatorname\{([^{}]+)\}/, "$1")
+        .replace(/^\\([A-Za-z]+)/, "$1")
+        .replace(/_\{([^{}]+)\}/, "_$1");
+      if (r.has(l)) return placeholderFor(l);
+      if (a.startsWith("\\")) return a;
+      if (/^[A-Za-z]{2,}$/.test(l) && [...l].every((o) => r.has(o)))
+        return [...l].map((o) => placeholderFor(o)).join("\\cdot ");
+      return a;
+    });
+    return { source, symbolOverrides: i };
+  }
+  function Rn(e, t, context = new Set()) {
     if (!e.trim())
-      return { output: "", warnings: [], errors: [], isSupported: !0 };
+      return {
+        output: "",
+        warnings: [],
+        errors: [],
+        safetyReasons: [],
+        status: "safe",
+        isSupported: !0,
+      };
+    let semanticContext = normalizePsetterConversionContext(context),
+      safetyIssue = psetterLatexSafetyIssue(e, semanticContext);
+    if (safetyIssue)
+      return {
+        output: "",
+        warnings: [],
+        errors: [],
+        safetyReasons: [safetyIssue],
+        status: "ambiguous",
+        isSupported: !1,
+      };
     if (/(?:\\parallel\b|\|\|)/.test(e))
       return {
         output: "",
         warnings: [],
         errors: [
-          "The parallel symbol is not supported in standard MITx answer syntax.",
+          "Psetter does not currently support the MITx parallel operator.",
         ],
+        safetyReasons: [],
+        status: "unsupported",
         isSupported: !1,
       };
     if (/(?:\\infty\b|\b(?:infty|infinity)\b)/i.test(e))
@@ -14606,33 +14886,55 @@
         errors: [
           "Infinity is not supported in standard MITx answer syntax.",
         ],
+        safetyReasons: [],
+        status: "unsupported",
         isSupported: !1,
       };
     let i = [],
-      r = [];
+      r = [],
+      unsafe = [],
+      conversionContext = {
+        mode: t,
+        warnings: i,
+        errors: r,
+        unsafe,
+        symbolOverrides: semanticContext.symbolOverrides,
+        allowedFunctions: new Set([
+          ...PSETTER_FUNCTION_NAMES,
+          ...semanticContext.functions,
+        ]),
+      };
     try {
-      let n = Kl.parse(nii(e)),
+      let parserSource = restorePsetterAuthoritativeFunctions(
+          e,
+          semanticContext.functions,
+        ),
+        metricProtected = protectPsetterNativeMetricAffixes(
+          // The bundled LaTeX parser reserves `\\cdot 10^{n}` for its
+          // scientific-notation exponent product. MathQuill emits `\\cdot`
+          // for ordinary multiplication too, so normalize the operator first.
+          parserSource.replace(/\\(?:cdot|times)(?![A-Za-z])/g, "*"),
+          semanticContext.symbolOverrides,
+        ),
+        protectedSource = protectPsetterAuthoritativeSymbols(
+          metricProtected.source,
+          { ...semanticContext, symbolOverrides: metricProtected.symbolOverrides },
+        );
+      conversionContext.symbolOverrides = protectedSource.symbolOverrides;
+      let n = Kl.parse(nii(protectedSource.source)),
         s = restorePsetterMultiLetterSymbols(
           e,
-          restorePsetterReservedSymbols(
-            e,
-            t === "literal"
-              ? X(n, i).text
-              : q(n, { mode: t, warnings: i, errors: r }).text,
-          ),
-          aliases,
+          t === "literal" ? X(n, conversionContext).text : q(n, conversionContext).text,
+          semanticContext.aliases,
         );
+      t === "literal" &&
+        unsafe.push("Display-oriented literal notation is not MITx parser syntax.");
       return (
         /\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\b/.test(s) &&
           i.push(
             "Subscripted variables require a grader that accepts underscore names.",
           ),
-        {
-        output: s,
-        warnings: Fn(i),
-        errors: Fn(r),
-        isSupported: r.length === 0,
-        }
+        psetterConversionResult(s, i, t, r, unsafe)
       );
     } catch (n) {
       return {
@@ -14641,6 +14943,8 @@
         errors: [
           n instanceof Error ? n.message : "Unable to parse the expression.",
         ],
+        safetyReasons: [],
+        status: "parse-error",
         isSupported: !1,
       };
     }
@@ -14696,19 +15000,131 @@
     if (!e.trim()) return "";
     let i = [],
       r = [],
-      n = "";
+      n = "",
+      context = normalizePsetterConversionContext(a);
     try {
       let s = Kl.parse(nii(e));
       n = restorePsetterMultiLetterSymbols(
         e,
-        restorePsetterReservedSymbols(
-          e,
-          q(s, { mode: "symbolic", warnings: i, errors: r }).text,
-        ),
-        a,
+        q(s, {
+          mode: "symbolic",
+          warnings: i,
+          errors: r,
+          unsafe: [],
+          symbolOverrides: context.symbolOverrides,
+          allowedFunctions: new Set([...PSETTER_FUNCTION_NAMES, ...context.functions]),
+        }).text,
+        context.aliases,
       );
     } catch {}
     return n || Hii(e) || t || "";
+  }
+  function collectPsetterNativeSemantics(e, t) {
+    if (!e || typeof e != "object") return;
+    if (e.type === "symbol") {
+      t.symbols.add(e.name);
+      e.name.length >= 2 && t.aliases.add(e.name);
+      return;
+    }
+    if (e.type === "call") {
+      t.functions.add(e.name);
+      e.args.forEach((i) => collectPsetterNativeSemantics(i, t));
+      return;
+    }
+    for (let i of [e.value, e.left, e.right])
+      i && typeof i == "object" && collectPsetterNativeSemantics(i, t);
+  }
+  function parsePsetterNativeSource(e) {
+    if (typeof e != "string") return null;
+    try {
+      let t = new Ct(new Rt(e)).parse(),
+        i = { symbols: new Set(), aliases: new Set(), functions: new Set() };
+      collectPsetterNativeSemantics(t, i);
+      return { ast: t, latex: Ae(t).latex, ...i };
+    } catch {
+      return null;
+    }
+  }
+  function canonicalizePsetterNativeAst(e) {
+    if (!e || typeof e !== "object") return e;
+    if (e.type === "number") {
+      const numeric = Number(e.value);
+      return Number.isFinite(numeric)
+        ? { ...e, value: String(numeric) }
+        : { ...e };
+    }
+    if (e.type === "metric") {
+      const numeric = Number(e.value);
+      return {
+        ...e,
+        value: Number.isFinite(numeric) ? String(numeric) : e.value,
+      };
+    }
+    if (e.type === "binary")
+      return {
+        ...e,
+        left: canonicalizePsetterNativeAst(e.left),
+        right: canonicalizePsetterNativeAst(e.right),
+      };
+    if (e.type === "unary" || e.type === "percent")
+      return { ...e, value: canonicalizePsetterNativeAst(e.value) };
+    if (e.type === "call")
+      return {
+        ...e,
+        args: e.args.map((i) => canonicalizePsetterNativeAst(i)),
+      };
+    return { ...e };
+  }
+  function psetterNativeFingerprint(e) {
+    let t = parsePsetterNativeSource(e);
+    return t ? JSON.stringify(canonicalizePsetterNativeAst(t.ast)) : null;
+  }
+  function psetterNativeEquivalent(e, t) {
+    let i = psetterNativeFingerprint(e),
+      r = psetterNativeFingerprint(t);
+    return i !== null && r !== null && i === r;
+  }
+  function mergePsetterSemanticContext(e, t) {
+    let i = normalizePsetterConversionContext(e),
+      r = {
+        items: e?.items ?? [],
+        aliases: new Set([...i.aliases, ...(t?.aliases ?? [])]),
+        functions: new Set([...i.functions, ...(t?.functions ?? [])]),
+        symbolOverrides: new Map(i.symbolOverrides),
+        authoritativeSymbols: new Map(i.authoritativeSymbols),
+      };
+    for (let n of t?.symbols ?? []) {
+      r.authoritativeSymbols.set(n, jn(n));
+      let s = psetterParserIdentity(jn(n));
+      s && r.symbolOverrides.set(s, n);
+    }
+    return r;
+  }
+  function preparePsetterNativeHydration(e, t, i) {
+    if (typeof e != "string")
+      return { safe: !1, reason: "Native MITx input is not textual." };
+    if (!e.trim())
+      return {
+        safe: !0,
+        latex: "",
+        context: mergePsetterSemanticContext(i, null),
+        canonical: "",
+      };
+    let r = parsePsetterNativeSource(e);
+    if (!r)
+      return {
+        safe: !1,
+        reason: "The existing MITx syntax cannot be represented faithfully.",
+      };
+    let n = mergePsetterSemanticContext(i, r),
+      s = Rn(r.latex, t === "literal" ? "symbolic" : t, n);
+    if (s.status !== "safe" || !psetterNativeEquivalent(e, s.output))
+      return {
+        safe: !1,
+        reason: "The existing MITx syntax does not pass semantic round-trip verification.",
+        result: s,
+      };
+    return { safe: !0, latex: r.latex, context: n, canonical: s.output };
   }
   var Cn = Object.getOwnPropertyDescriptor(
     HTMLInputElement.prototype,
@@ -14831,7 +15247,7 @@
       },
       {
         id: "epsilon",
-        label: "\u03B5",
+        label: "\u03F5",
         search: "epsilon",
         latex: "\\epsilon",
         group: "greek",
@@ -14873,7 +15289,7 @@
       },
       {
         id: "phi",
-        label: "\u03C6",
+        label: "\u03D5",
         search: "phi",
         latex: "\\phi",
         group: "greek",
@@ -14941,56 +15357,134 @@
         latex: "\\approx",
         group: "relations",
       },
-    ],
-    Jl = {
-      alpha: [/α/i, /\\alpha\b/i],
-      beta: [/β/i, /\\beta\b/i],
-      gamma: [/γ/i, /\\gamma\b/i],
-      delta: [/δ/i, /\\delta\b/i],
-      epsilon: [/ε/i, /\\epsilon\b/i],
-      theta: [/θ/i, /\\theta\b/i],
-      lambda: [/λ/i, /\\lambda\b/i],
-      mu: [/μ|µ/i, /\\mu\b/i],
-      rho: [/ρ/i, /\\rho\b/i],
-      sigma: [/σ/i, /\\sigma\b/i],
-      phi: [/φ|ϕ/i, /\\phi\b/i],
-      omega: [/ω/i, /\\omega\b/i],
-      Delta: [/Δ/, /\\Delta\b/],
-      Omega: [/Ω/, /\\Omega\b/],
-      pi: [/π/i, /\\pi\b/i],
-      infty: [/∞/, /\\infty\b/i],
-      partial: [/∂/, /\\partial\b/i],
-    };
+    ];
+  var psetterContextExcludedSelector = [
+    '[class*="pset-math-"]',
+    "[data-pset-math-enhanced]",
+    "[hidden]",
+    '[aria-hidden="true"]',
+    ".hidden",
+    ".is-hidden",
+    ".sr",
+    ".problem-hint",
+    ".submission-feedback",
+    ".response-feedback",
+    "template",
+  ].join(",");
+  function isPsetterContextSourceNode(e, t) {
+    if (!e || !t || e === t || !e.isConnected || !t.isConnected) return !1;
+    if (e.closest?.(psetterContextExcludedSelector)) return !1;
+    let i = e.getAttribute?.("style") ?? "";
+    if (/display\s*:\s*none|visibility\s*:\s*hidden/i.test(i)) return !1;
+    return Boolean(
+      e.compareDocumentPosition(t) & Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  }
+  function psetterContextNodeText(e) {
+    return (e.closest?.("p, li, dd, dt, figcaption, .problem-header")?.textContent ?? e.textContent ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+  function addPsetterExplicitAliases(e, t, i) {
+    for (let r of e.querySelectorAll("p, li, dd, dt, figcaption")) {
+      if (!isPsetterContextSourceNode(r, t)) continue;
+      let n = r.innerHTML ?? "";
+      let s = r.textContent ?? "";
+      if (isPsetterInstructionalText(s)) continue;
+      let a = [
+        ...n.matchAll(
+          /(?:\[mathjaxinline\][\s\S]*?\[\/mathjaxinline\]|\\\([\s\S]*?\\\))\s*\(\s*["“”']([A-Za-z][A-Za-z0-9_]*?)["“”']\s*\)/g,
+        ),
+        ...n.matchAll(
+          /<code\b[^>]*>\s*([A-Za-z][A-Za-z0-9_]*)\s*<\/code>\s*(?:for|as)\b/gi,
+        ),
+        ...s.matchAll(
+          /(?:type\s+in|enter\s+(?:your\s+)?answer\s+as)\s*["“”']([A-Za-z][A-Za-z0-9_]*)["“”']/gi,
+        ),
+      ];
+      for (let l of a) {
+        let o = createPsetterContextItem(l[1], {
+          explicitAlias: !0,
+          declaredKind: "alias",
+          problemDefined: !0,
+          provenance: "explicit-declaration",
+        });
+        o &&
+          (o.semanticKind === "alias" || o.outputName?.includes("_")) &&
+          i.push(o);
+      }
+    }
+  }
+  function psetterAnswerTargetNames(e, t, i) {
+    let r = [...e.querySelectorAll(i)].filter((n) => isPsetterContextSourceNode(n, t));
+    let n = r.at(-1);
+    if (!n) return new Set();
+    let s =
+      n.getAttribute("data-psetter-context") ||
+      n.getAttribute("data-math") ||
+      n.getAttribute("data-mathml") ||
+      n.getAttribute("alttext") ||
+      n.getAttribute("aria-label") ||
+      n.textContent ||
+      "";
+    if (!/(?:=|\bequals?|\bequal\s+to)\s*$/i.test(s.trim())) return new Set();
+    let a = s.replace(/(?:=|\bequals?|\bequal\s+to)\s*$/i, "");
+    let l = extractPsetterMathIdentifiers(normalizePsetterMathText(a));
+    return new Set(l.length > 0 ? [l[0].outputName] : []);
+  }
   function qn(e) {
-    let t =
-      e.closest(
-        ".problem, .problems-wrapper, .vert, .xblock, .problem-block",
-      ) ?? e.parentElement;
+    let t = psetterProblemSourceRoot(e);
     if (!t) return [];
-    let i = [...t.querySelectorAll("code")]
-      .map((r) => r.textContent?.trim() ?? "")
-      .filter((r) => /^[A-Za-z][A-Za-z0-9_]*$/.test(r));
-    if (i.length > 0)
-      return [...new Set(i)].slice(0, 10).map((r) => ({
-        id: `term:${r}`,
-        label: r,
-        display: (() => {
-          let [n, s] = r.split("_", 2),
-            a = {
-              alpha: "α", beta: "β", gamma: "γ", delta: "δ",
-              epsilon: "ε", theta: "θ", lambda: "λ", mu: "μ",
-              rho: "ρ", sigma: "σ", phi: "φ", omega: "ω",
-            }[n] ?? n;
-          return { base: a, subscript: s ?? "" };
-        })(),
-        search: `term ${r}`,
-        latex: `\\left(\\operatorname{${r.replace(/_/g, "\\_")}}\\right)`,
-        group: "context",
-        kind: "term",
-      }));
-    let r = `${t.textContent ?? ""}
-${t.innerHTML}`;
-    return Si.filter((n) => Jl[n.id]?.some((s) => s.test(r))).slice(0, 10);
+    let i = [];
+    addPsetterExplicitAliases(t, e, i);
+    let r = [
+      'script[type^="math/tex"]',
+      "mjx-container",
+      ".MathJax",
+      ".MathJax_Display",
+      "math",
+      '[role="math"]',
+      "[data-math]",
+      "[data-mathml]",
+      "[data-psetter-context]",
+    ].join(",");
+    let contextTargets = psetterAnswerTargetNames(t, e, r);
+    for (let n of t.querySelectorAll(r)) {
+      if (!isPsetterContextSourceNode(n, e)) continue;
+      let s = psetterContextNodeText(n);
+      if (isPsetterInstructionalText(s)) continue;
+      let a = n.matches?.("math")
+        ? n.outerHTML
+        : n.getAttribute("data-psetter-context") ||
+          n.getAttribute("data-math") ||
+          n.getAttribute("data-mathml") ||
+          n.getAttribute("alttext") ||
+          n.getAttribute("aria-label") ||
+          n.textContent ||
+          "";
+      i.push(...extractPsetterMathIdentifiers(a));
+    }
+    for (let n of t.querySelectorAll("code")) {
+      if (!isPsetterContextSourceNode(n, e)) continue;
+      let s = psetterContextNodeText(n);
+      if (isPsetterInstructionalText(s)) continue;
+      let a = n.textContent?.trim() ?? "";
+      if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(a)) continue;
+      let explicitDeclaration =
+        /\b(?:where|let|denote|represented|in terms of|variable|constant|answer in terms of)\b/i.test(s);
+      if (!explicitDeclaration) continue;
+      let declaredVariable = /\b(?:variable|let|denote|represented)\b/i.test(s);
+      let l = createPsetterContextItem(a, {
+        explicitAlias: explicitDeclaration,
+        declaredKind: declaredVariable ? "variable" : void 0,
+        problemDefined: !0,
+        provenance: "explicit-declaration",
+      });
+      l && i.push(l);
+    }
+    return dedupePsetterContextItems(
+      i.filter((n) => !contextTargets.has(n.outputName)),
+    );
   }
   function qii(e) {
     if (typeof e != "string") return e;
@@ -15359,20 +15853,35 @@ ${t.innerHTML}`;
     modeSelect;
     paletteGrid;
     paletteSearch;
-    lastResult = { output: "", warnings: [], errors: [], isSupported: !0 };
+    lastResult = {
+      output: "",
+      warnings: [],
+      errors: [],
+      safetyReasons: [],
+      status: "safe",
+      isSupported: !0,
+    };
     hasInitialResult = !1;
     trackedProductCount = 0;
     operationCountTimer;
     lastCommittedOutput = "";
     draftExpression = "";
     writingNative = !1;
+    hydratingEditor = !1;
+    editorDirty = !1;
     originalTabIndex;
     externalInputListener;
     focusTransferTimer;
     equationFitFrame;
     originalInlineHeight;
     originalInlineBoxSizing;
-    contextAliases;
+    semanticContext;
+    hydrationBlocked = !1;
+    disposed = !1;
+    lifecycleGeneration = 0;
+    resourceDisposers = [];
+    inlineDisposers = [];
+    detailsDisposers = [];
     restoreControl;
     restoreHint;
     restoreHintPositionFrame;
@@ -15393,7 +15902,7 @@ ${t.innerHTML}`;
     symbolsToggle;
     constructor(t, i, r, n) {
       ((this.input = t),
-        (this.contextAliases = discoverPsetterContextAliases(t)),
+        (this.semanticContext = discoverPsetterSemanticContext(t)),
         (this.kind = i),
         (this.settings = r),
         (this.hooks = n),
@@ -15419,8 +15928,9 @@ ${t.innerHTML}`;
           this.trigger.replaceChildren(s);
         })(),
         (this.trigger.hidden = !0),
-        this.trigger.addEventListener("mousedown", (s) => s.preventDefault()),
-        this.trigger.addEventListener("click", () => {
+        this.listen(this.trigger, "mousedown", (s) => s.preventDefault()),
+        this.listen(this.trigger, "click", () => {
+          if (!this.isCurrent()) return;
           this.active || this.hooks.requestActivation(this), this.toggleDetails();
         }),
         (t.dataset.psetMathEnhanced = "true"),
@@ -15447,19 +15957,21 @@ ${t.innerHTML}`;
           this.restoreControl.appendChild(s);
         })(),
         (this.restoreControl.hidden = !0),
-        this.restoreControl.addEventListener("mousedown", (s) => {
+        this.listen(this.restoreControl, "mousedown", (s) => {
           s.preventDefault();
           s.stopPropagation();
         }),
-        this.restoreControl.addEventListener("click", (s) => {
+        this.listen(this.restoreControl, "click", (s) => {
           s.preventDefault();
           s.stopPropagation();
+          if (!this.isCurrent()) return;
           this.restoreOriginal();
         }),
-        this.restoreControl.addEventListener("keydown", (s) => {
+        this.listen(this.restoreControl, "keydown", (s) => {
           if (s.key !== "Enter" && s.key !== " ") return;
           s.preventDefault();
           s.stopPropagation();
+          if (!this.isCurrent()) return;
           this.restoreOriginal();
         }),
         this.trigger.insertAdjacentElement("afterend", this.restoreControl),
@@ -15470,35 +15982,60 @@ ${t.innerHTML}`;
         )),
         this.restoreHint.setAttribute("role", "status"),
         this.restoreHint.setAttribute("aria-hidden", "true"),
-        this.restoreHint.addEventListener("pointerdown", (s) => {
+        this.listen(this.restoreHint, "pointerdown", (s) => {
           s.preventDefault();
           s.stopPropagation();
         }),
         (document.body ?? document.documentElement).appendChild(this.restoreHint),
         (this.formElement = t.form ?? t.closest?.("form")),
         (this.formSubmitListener = () => {
+          if (!this.isCurrent()) return;
           ((this.restoreAvailable = !1), this.renderRestoreControl());
         }),
-        this.formElement?.addEventListener("submit", this.formSubmitListener),
-        t.addEventListener("focus", () => {
+        this.formElement && this.listen(this.formElement, "submit", this.formSubmitListener),
+        this.listen(t, "focus", () => {
+          if (!this.isCurrent()) return;
           (this.hooks.requestActivation(this), this.scheduleMathFieldFocus());
         }),
-        t.addEventListener("keydown", (s) => this.handleNativeKeydown(s)),
+        this.listen(t, "keydown", (s) => this.handleNativeKeydown(s)),
         (this.externalInputListener = () => {
-          this.writingNative ||
-            !this.active ||
-            !this.mathField ||
-            (this.input.value !== this.lastCommittedOutput &&
-              ((this.draftExpression = this.input.value),
-              this.mathField.latex(Bt(this.input.value)),
-              this.recompute()));
+          if (!this.isCurrent()) return;
+          if (this.writingNative || !this.active) return;
+          if (!this.mathField) {
+            this.draftExpression = this.input.value;
+            this.mountInlineEditor();
+            return;
+          }
+          this.input.value !== this.lastCommittedOutput &&
+            this.hydrateNativeSource(this.input.value);
         }),
-        t.addEventListener("input", this.externalInputListener));
+        this.listen(t, "input", this.externalInputListener));
     }
     get isActive() {
       return this.active;
     }
+    isCurrent() {
+      return !this.disposed && this.hooks.isCurrentController?.(this) !== !1;
+    }
+    listen(t, i, r, n) {
+      if (!t?.addEventListener || this.disposed) return;
+      t.addEventListener(i, r, n);
+      this.resourceDisposers.push(() => t.removeEventListener(i, r, n));
+    }
+    listenScoped(t, i, r, n, s) {
+      if (!i?.addEventListener || this.disposed) return;
+      i.addEventListener(r, n, s);
+      t.push(() => i.removeEventListener(r, n, s));
+    }
+    clearScoped(t) {
+      t.splice(0).forEach((i) => {
+        try {
+          i();
+        } catch {}
+      });
+    }
     updateSettings(t) {
+      if (!this.isCurrent()) return;
       if (((this.settings = t), !t.enabled)) {
         this.deactivate();
         return;
@@ -15545,32 +16082,39 @@ ${t.innerHTML}`;
       );
     }
     toggleDetails() {
+      if (!this.isCurrent()) return;
       ((this.detailsOpen = !this.detailsOpen),
         this.detailsOpen && !this.detailsPanel && this.mountDetailsPanel(),
         this.hooks.onDetailsToggled(this.detailsOpen),
         this.renderDetailsVisibility());
     }
     setMode(t) {
+      if (!this.isCurrent()) return;
       ((this.mode = t),
         this.modeSelect && (this.modeSelect.value = t),
+        (this.editorDirty = !0),
         this.recompute());
     }
     toggleInline() {
+      if (!this.isCurrent()) return;
       (this.inlineEnabled ? this.disableInline() : this.enableInline(),
         this.renderControls(),
         this.hooks.onControllerStateChanged?.(this));
     }
     clearExpression() {
+      if (!this.isCurrent()) return;
       this.clearActivationRestore();
+      this.editorDirty = !0;
       this.inlineEnabled && this.mathField
         ? ((this.mathField.latex(""), this.recompute(), this.mathField.focus()))
         : ((this.lastCommittedOutput = ""), Bn(this.input, ""));
     }
     typeCharacter(t) {
-      if (!this.inlineEnabled) return !1;
+      if (!this.isCurrent() || !this.inlineEnabled) return !1;
       this.mathField || this.mountInlineEditor();
       if (!this.mathField) return !1;
       this.clearActivationRestore();
+      this.editorDirty = !0;
       return (
         t === " "
           ? this.mathField.typedText?.(" ")
@@ -15583,18 +16127,29 @@ ${t.innerHTML}`;
       );
     }
     scheduleMathFieldFocus() {
-      this.focusTransferTimer && window.clearTimeout(this.focusTransferTimer),
-        (this.focusTransferTimer = window.setTimeout(() => {
-          this.focusTransferTimer = void 0;
-          if (!this.active || !this.inlineEnabled) return;
-          this.mathField || this.mountInlineEditor(),
-            this.mathField &&
-              (this.mathField.focus(),
-              typeof this.mathField.moveToRightEnd == "function" &&
-                this.mathField.moveToRightEnd());
-        }, 0));
+      if (!this.isCurrent()) return;
+      if (this.focusTransferTimer) window.clearTimeout(this.focusTransferTimer);
+      this.lifecycleGeneration += 1;
+      let t = this.lifecycleGeneration;
+      this.focusTransferTimer = window.setTimeout(() => {
+        this.focusTransferTimer = void 0;
+        if (
+          !this.isCurrent() ||
+          t !== this.lifecycleGeneration ||
+          !this.active ||
+          !this.inlineEnabled
+        )
+          return;
+        this.mathField || this.mountInlineEditor();
+        if (this.mathField) {
+          this.mathField.focus();
+          typeof this.mathField.moveToRightEnd == "function" &&
+            this.mathField.moveToRightEnd();
+        }
+      }, 0);
     }
     handleNativeKeydown(t) {
+      if (!this.isCurrent()) return;
       this.active &&
         this.inlineEnabled &&
         !this.mathField &&
@@ -15632,11 +16187,12 @@ ${t.innerHTML}`;
       }
       i &&
         (t.preventDefault(),
+        (this.editorDirty = !0),
         this.recompute(),
         this.scheduleMathFieldFocus());
     }
     mountInlineEditor() {
-      if (this.controls || !this.input.isConnected) return;
+      if (this.controls || !this.input.isConnected || !this.isCurrent()) return;
       let t = R("span", "pset-math-takeover"),
         i = R("div", "pset-math-editor-surface"),
         r = R("span", "pset-math-field");
@@ -15644,10 +16200,10 @@ ${t.innerHTML}`;
         i.setAttribute("aria-label", "Psetter answer input"),
         // Keep editor interactions inside Psetter. Preventing the default
         // mousedown here used to block MathQuill's own focus/cursor logic.
-        i.addEventListener("pointerdown", (n) => n.stopPropagation()),
-        i.addEventListener("mousedown", (n) => n.stopPropagation()),
-        i.addEventListener("focusin", (n) => n.stopPropagation()),
-        i.addEventListener("keydown", (n) => this.handleEditorShortcut(n)),
+        this.listenScoped(this.inlineDisposers, i, "pointerdown", (n) => n.stopPropagation()),
+        this.listenScoped(this.inlineDisposers, i, "mousedown", (n) => n.stopPropagation()),
+        this.listenScoped(this.inlineDisposers, i, "focusin", (n) => n.stopPropagation()),
+        this.listenScoped(this.inlineDisposers, i, "keydown", (n) => this.handleEditorShortcut(n)),
         i.appendChild(r),
         this.input.parentNode?.insertBefore(t, this.input),
         t.append(this.input, i),
@@ -15681,64 +16237,171 @@ ${t.innerHTML}`;
           ].join(" "),
           handlers: {
             edit: () => {
+              if (this.hydratingEditor || !this.isCurrent()) return;
+              this.editorDirty = !0;
               this.historyApplying || this.activationPending || this.clearActivationRestore();
               this.recompute();
             },
             enter: () => {
+              if (!this.isCurrent()) return;
               this.detailsOpen &&
                 ((this.detailsOpen = !1), this.renderDetailsVisibility());
             },
           },
         })));
-      let n = (this.draftExpression || this.input.value).trim();
-        (n && this.mathField.latex(Bt(n)),
-        this.recompute(),
-        (this.activationPending = !1),
+      let n = this.hooks.readEditorState?.(this.input);
+      if (n?.nativeOutput === this.input.value && typeof n.latex === "string") {
+        this.hydrateEditorLatex(n.latex, n.nativeOutput);
+      } else {
+        this.hydrateNativeSource(this.draftExpression || this.input.value);
+      }
+      if (!this.mathField) {
+        this.activationPending = !1;
+        this.renderRestoreControl();
+        return;
+      }
+      ((this.activationPending = !1),
         this.renderRestoreControl(),
         this.maybeShowRestoreHint(),
         this.scheduleMathFieldFocus());
     }
+    hydrateEditorLatex(t, i) {
+      if (!this.mathField || !this.isCurrent()) return;
+      let r = preparePsetterNativeHydration(
+        i,
+        this.mode,
+        discoverPsetterSemanticContext(this.input),
+      );
+      let n = r.safe ? Rn(t, this.mode, r.context) : null;
+      if (!r.safe || n?.status !== "safe" || !psetterNativeEquivalent(i, n.output)) {
+        this.hydrateNativeSource(i);
+        return;
+      }
+      this.semanticContext = r.context;
+      this.hydratingEditor = !0;
+      try {
+        this.mathField.latex(t);
+      } finally {
+        this.hydratingEditor = !1;
+      }
+      this.draftExpression = i;
+      this.lastCommittedOutput = i;
+      this.hydrationBlocked = !1;
+      this.editorDirty = !1;
+      this.recompute(!1);
+    }
+    hydrateNativeSource(t) {
+      if (!this.mathField || !this.isCurrent()) return;
+      let i = typeof t == "string" ? t : "";
+      this.hooks.clearEditorState?.(this.input);
+      this.semanticContext = discoverPsetterSemanticContext(this.input);
+      let r = preparePsetterNativeHydration(i, this.mode, this.semanticContext);
+      if (!r.safe) {
+        this.hydrationBlocked = !0;
+        this.draftExpression = i;
+        this.lastCommittedOutput = i;
+        this.editorDirty = !1;
+        this.lastResult = {
+          output: "",
+          warnings: [],
+          errors: [
+            r.result?.output
+              ? `${r.reason} Candidate output: ${r.result.output}`
+              : r.reason,
+          ],
+          safetyReasons: [],
+          status: "unsupported",
+          isSupported: !1,
+        };
+        this.unmountInlineEditor();
+        return;
+      }
+      this.semanticContext = r.context;
+      this.hydrationBlocked = !1;
+      this.hydratingEditor = !0;
+      try {
+        this.mathField.latex(r.latex);
+      } finally {
+        this.hydratingEditor = !1;
+      }
+      this.draftExpression = i;
+      this.lastCommittedOutput = i;
+      this.editorDirty = !1;
+      this.recompute(!1);
+    }
     unmountInlineEditor() {
-      (this.equationFitFrame && window.cancelAnimationFrame(this.equationFitFrame),
-        (this.equationFitFrame = void 0),
-        (this.input.style.height = this.originalInlineHeight ?? ""),
-        (this.input.style.boxSizing = this.originalInlineBoxSizing ?? ""),
-        (this.originalInlineHeight = void 0),
-        (this.originalInlineBoxSizing = void 0),
-        this.controls?.parentNode &&
-        (this.controls.parentNode.insertBefore(this.input, this.controls),
-        this.controls.remove()),
-        this.input.classList.remove("pset-math-native-covered"),
-        (this.controls = void 0),
-        (this.editorSurface = void 0),
-        (this.mathField = void 0));
+      this.lifecycleGeneration += 1;
+      this.clearScoped(this.inlineDisposers);
+      if (this.focusTransferTimer) window.clearTimeout(this.focusTransferTimer);
+      if (this.operationCountTimer) window.clearTimeout(this.operationCountTimer);
+      if (this.equationFitFrame) window.cancelAnimationFrame(this.equationFitFrame);
+      this.focusTransferTimer = void 0;
+      this.operationCountTimer = void 0;
+      this.equationFitFrame = void 0;
+      let t = this.originalInlineHeight ?? "",
+        i = this.originalInlineBoxSizing ?? "";
+      this.input.style.height = t;
+      this.input.style.boxSizing = i;
+      if (this.controls?.parentNode) {
+        let r = this.controls.contains(this.input)
+          ? this.input
+          : this.controls.querySelector(psetterNativeAnswerSelector);
+        if (r && r !== this.input) {
+          r.removeAttribute("data-pset-math-enhanced");
+          r.classList.remove("pset-math-native-covered", "pset-math-active-field");
+          r.style.height = t;
+          r.style.boxSizing = i;
+        }
+        r && this.controls.parentNode.insertBefore(r, this.controls);
+        this.controls.remove();
+      }
+      this.originalInlineHeight = void 0;
+      this.originalInlineBoxSizing = void 0;
+      this.input.classList.remove("pset-math-native-covered");
+      this.controls = void 0;
+      this.editorSurface = void 0;
+      this.mathField = void 0;
     }
     getDraftValue(t = this.mathField?.latex?.() ?? "") {
       if (!this.mathField) return this.draftExpression || this.input.value || "";
-      return Kii(t, this.draftExpression, this.contextAliases);
+      return Kii(t, this.draftExpression, this.semanticContext);
     }
     getCommittedValue() {
-      if (!this.mathField) return this.lastCommittedOutput || this.input.value;
+      if (!this.mathField)
+        return { safe: !1, value: this.lastCommittedOutput || this.input.value };
         let t = this.mathField.latex(),
-        i = this.getDraftValue(t),
-        r = Rn(t, this.mode, this.contextAliases);
-      if (((this.lastResult = r), r.isSupported)) {
+        r = Rn(t, this.mode, this.semanticContext);
+      if (((this.lastResult = r), r.status === "safe")) {
         // MathQuill's plain-text form preserves contiguous authored aliases
         // in cases where its LaTeX form has already been normalized into
         // implicit products. Keep explicit `*` multiplication untouched.
         let n = this.mathField.text?.() ?? t;
-        return restorePsetterMultiLetterSymbols(n, r.output, this.contextAliases);
+        return {
+          safe: !0,
+          value: restorePsetterMultiLetterSymbols(
+            n,
+            r.output,
+            this.semanticContext.aliases,
+          ),
+        };
       }
-      return i.trim() ? i : this.lastCommittedOutput;
+      return { safe: !1, value: this.lastCommittedOutput };
     }
     writeNativeValue(t) {
-      // Keep the value sent back to MITx aligned with the user's source
-      // spelling. This final guard covers parser paths that may normalize a
-      // reserved single-letter symbol before Rn() returns its result.
+      if (!this.isCurrent()) return;
       let i = this.mathField?.latex?.() ?? "";
-      t = restorePsetterReservedSymbols(i, t);
-      t = restorePsetterMultiLetterSymbols(i, t, this.contextAliases);
-      t = restorePsetterMultiLetterSymbols(this.mathField?.text?.() ?? i, t, this.contextAliases);
+      t = restorePsetterMultiLetterSymbols(i, t, this.semanticContext.aliases);
+      t = restorePsetterMultiLetterSymbols(
+        this.mathField?.text?.() ?? i,
+        t,
+        this.semanticContext.aliases,
+      );
+      if (typeof t == "string")
+        this.hooks.writeEditorState?.(this.input, {
+          latex: i,
+          nativeOutput: t,
+          mode: this.mode,
+        });
       if (
         typeof t != "string" ||
         (t === this.lastCommittedOutput && this.input.value === t)
@@ -15752,17 +16415,21 @@ ${t.innerHTML}`;
       }
     }
     commitNativeValue() {
-      this.writeNativeValue(this.getCommittedValue());
+      let t = this.getCommittedValue();
+      t.safe && this.writeNativeValue(t.value);
     }
     enableInline() {
+      if (!this.isCurrent()) return;
       ((this.inlineEnabled = !0),
         this.mountInlineEditor(),
         this.input.classList.add("pset-math-active-field"));
     }
     disableInline() {
-      this.mathField && this.commitNativeValue();
+      if (!this.isCurrent()) return;
+      this.mathField && this.editorDirty && this.commitNativeValue();
       ((this.inlineEnabled = !1),
         (this.detailsOpen = !1),
+        this.clearScoped(this.detailsDisposers),
         this.detailsMount?.remove(),
         this.unmountInlineEditor(),
         this.input.classList.remove("pset-math-active-field"),
@@ -15782,7 +16449,10 @@ ${t.innerHTML}`;
         this.renderRestoreControl());
     }
     activate() {
-      this.active ||
+      this.isCurrent() &&
+        (this.semanticContext = discoverPsetterSemanticContext(this.input));
+      this.isCurrent() &&
+        (this.active ||
         !this.input.isConnected ||
         ((this.active = !0),
         (this.activationOriginalValue = this.input.value),
@@ -15790,6 +16460,7 @@ ${t.innerHTML}`;
         (this.activationInitialOutput = ""),
         (this.restoreHintCounted = !1),
         (this.activationPending = !0),
+        (this.editorDirty = !1),
         // Keep the recovery affordance available for the entire activation
         // session. It is cleared only by an explicit edit, restore, or submit.
         (this.restoreAvailable = this.activationOriginalValue.length > 0),
@@ -15800,16 +16471,19 @@ ${t.innerHTML}`;
         this.inlineEnabled && this.enableInline(),
         this.renderControls(),
         this.renderDetailsVisibility(),
-        this.hooks.onControllerStateChanged?.(this));
+        this.hooks.onControllerStateChanged?.(this)));
     }
-    deactivate() {
+    deactivate(t = !0) {
       this.active &&
         (this.mathField &&
+          this.editorDirty &&
+          t &&
           !this.skipNextDeactivateCommit &&
           this.commitNativeValue(),
         (this.skipNextDeactivateCommit = !1),
         ((this.active = !1),
         (this.detailsOpen = !1),
+        this.clearScoped(this.detailsDisposers),
         this.detailsMount?.remove(),
         this.unmountInlineEditor(),
         this.input.classList.remove("pset-math-active-field"),
@@ -15862,7 +16536,8 @@ ${t.innerHTML}`;
         (this.restoreHint.style.top = `${r}px`);
     }
     showRestoreHint() {
-      if (!this.restoreHint || !this.restoreAvailable || !this.active) return;
+      if (!this.isCurrent() || !this.restoreHint || !this.restoreAvailable || !this.active)
+        return;
       this.positionRestoreHint();
       this.restoreHint.classList.add("is-visible");
       this.restoreHint.setAttribute("aria-hidden", "false");
@@ -15870,6 +16545,7 @@ ${t.innerHTML}`;
         window.cancelAnimationFrame(this.restoreHintPositionFrame);
       this.restoreHintPositionFrame = window.requestAnimationFrame(() => {
         this.restoreHintPositionFrame = void 0;
+        if (!this.isCurrent()) return;
         this.positionRestoreHint();
       });
     }
@@ -15882,17 +16558,18 @@ ${t.innerHTML}`;
         (this.restoreHintPositionFrame = void 0));
     }
     maybeShowRestoreHint() {
-      if (this.restoreHintCounted || !this.restoreAvailable || !this.active) return;
+      if (!this.isCurrent() || this.restoreHintCounted || !this.restoreAvailable || !this.active)
+        return;
       this.restoreHintCounted = !0;
-      recordPsetterRestoreHintTranslation().then((t) => {
-        if (!t?.shouldShow) return;
+      let t = this.lifecycleGeneration;
+      recordPsetterRestoreHintTranslation().then((i) => {
+        if (!this.isCurrent() || t !== this.lifecycleGeneration || !i?.shouldShow) return;
         this.showRestoreHint();
-        // Wait one frame so the restore control has its final page position.
-        window.requestAnimationFrame(() => this.showRestoreHint());
       });
     }
     handleEditorShortcut(t) {
       if (
+        !this.isCurrent() ||
         !this.active ||
         !this.mathField ||
         !(t.ctrlKey || t.metaKey) ||
@@ -15922,13 +16599,14 @@ ${t.innerHTML}`;
       }
     }
     restoreHistoryState(t) {
-      if (!this.mathField || typeof t != "string") return;
+      if (!this.isCurrent() || !this.mathField || typeof t != "string") return;
       this.historyApplying = !0;
       try {
         this.mathField.latex(t);
       } finally {
         this.historyApplying = !1;
       }
+      this.editorDirty = !0;
       this.recompute();
       this.mathField.focus();
     }
@@ -15944,11 +16622,13 @@ ${t.innerHTML}`;
       this.restoreHistoryState(this.historyStates[this.historyIndex]);
     }
     restoreOriginal() {
-      if (!this.restoreAvailable || typeof this.activationOriginalValue != "string")
+      if (!this.isCurrent() || !this.restoreAvailable || typeof this.activationOriginalValue != "string")
         return;
       let t = this.activationOriginalValue;
+      this.hooks.clearEditorState?.(this.input);
       ((this.restoreAvailable = !1),
         this.activationPending = !1,
+        this.editorDirty = !1,
         this.skipNextDeactivateCommit = !0,
         this.deactivate(),
         (this.lastCommittedOutput = t),
@@ -15957,11 +16637,19 @@ ${t.innerHTML}`;
         this.renderRestoreControl());
     }
     dispose() {
-      (this.deactivate(),
+      if (this.disposed) return;
+      this.disposed = !0;
+      this.lifecycleGeneration += 1;
+      this.resourceDisposers.splice(0).forEach((t) => {
+        try {
+          t();
+        } catch {}
+      });
+      this.clearScoped(this.inlineDisposers);
+      this.clearScoped(this.detailsDisposers);
+      (this.deactivate(!1),
         this.focusTransferTimer && window.clearTimeout(this.focusTransferTimer),
         this.operationCountTimer && window.clearTimeout(this.operationCountTimer),
-        this.input.removeEventListener("input", this.externalInputListener),
-        this.formElement?.removeEventListener("submit", this.formSubmitListener),
         this.input.removeAttribute("data-pset-math-enhanced"),
         this.trigger.remove(),
         this.restoreControl?.remove(),
@@ -15970,10 +16658,11 @@ ${t.innerHTML}`;
         this.restoreHint?.remove());
     }
     focus() {
-      this.mathField?.focus();
+      this.isCurrent() && this.mathField?.focus();
     }
     mountDetailsPanel() {
-      if (this.detailsPanel || !this.input.isConnected) return;
+      if (this.detailsPanel || !this.input.isConnected || !this.isCurrent()) return;
+      this.clearScoped(this.detailsDisposers);
       let t = this.resolvePanelHost(),
         i = this.buildDetailsPanel(),
         r = R("div", "pset-math-details-slot");
@@ -15982,12 +16671,12 @@ ${t.innerHTML}`;
         t?.insertAdjacentElement("afterend", r),
         (this.detailsMount = r),
         (this.detailsPanel = i),
-        i.addEventListener("pointerdown", (n) => n.stopPropagation()),
-        i.addEventListener("mousedown", (n) => n.stopPropagation()),
-        i.addEventListener("click", (n) => n.stopPropagation()),
-        i.addEventListener("focusin", (n) => n.stopPropagation()),
-        i.addEventListener("pointerup", (n) => n.stopPropagation()),
-        i.addEventListener("keydown", (n) => {
+        this.listenScoped(this.detailsDisposers, i, "pointerdown", (n) => n.stopPropagation()),
+        this.listenScoped(this.detailsDisposers, i, "mousedown", (n) => n.stopPropagation()),
+        this.listenScoped(this.detailsDisposers, i, "click", (n) => n.stopPropagation()),
+        this.listenScoped(this.detailsDisposers, i, "focusin", (n) => n.stopPropagation()),
+        this.listenScoped(this.detailsDisposers, i, "pointerup", (n) => n.stopPropagation()),
+        this.listenScoped(this.detailsDisposers, i, "keydown", (n) => {
           n.key === "Escape" &&
             (n.preventDefault(),
             (this.detailsOpen = !1),
@@ -15997,10 +16686,11 @@ ${t.innerHTML}`;
     }
     buildDetailsPanel() {
       let t = R("div", "pset-math-details"),
-        w = qn(this.input);
+        w = this.semanticContext?.items ?? qn(this.input),
+        visibleContext = w.slice(0, 12);
       this.settings.remoteFeatures?.contextSymbols !== !1 &&
-        w.length > 0 &&
-        t.appendChild(this.buildSymbolSection("From this question", w));
+        visibleContext.length > 0 &&
+        t.appendChild(this.buildSymbolSection("From this question", visibleContext));
       (w.length === 0 || this.settings.remoteFeatures?.contextSymbols === !1) &&
         t.classList.add("pset-math-no-context");
       let z = R("div", "pset-math-palette-header"),
@@ -16009,7 +16699,8 @@ ${t.innerHTML}`;
       let oe = Be("-", "pset-math-symbol-toggle", "Collapse Symbols");
       let ue = R("span", "pset-math-symbol-heading");
       (oe.setAttribute("aria-expanded", "true"),
-        oe.addEventListener("click", () => {
+        this.listenScoped(this.detailsDisposers, oe, "click", () => {
+          if (!this.isCurrent()) return;
           ((this.symbolsPreferenceTouched = !0),
             this.setSymbolsOpen(!this.symbolsOpen, !0));
         }),
@@ -16019,47 +16710,52 @@ ${t.innerHTML}`;
         (ee.placeholder = "Search symbols"),
         ee.setAttribute("aria-label", "Search symbols"),
         (ee.hidden = this.settings.remoteFeatures?.symbolSearch === !1),
-        ee.addEventListener("input", () => {
+        this.listenScoped(this.detailsDisposers, ee, "input", () => {
+          if (!this.isCurrent()) return;
           ee.value.trim() &&
             ((this.symbolsPreferenceTouched = !0), this.setSymbolsOpen(!0));
           this.renderPalette(ee.value);
         }),
         (this.paletteSearch = ee),
         z.append(ue, ee));
-      let re = R("div", "pset-math-symbol-grid");
+        let re = R("div", "pset-math-symbol-grid");
       let ie = R("div", "pset-math-brand-footer"),
         pe = R("img", "pset-math-brand-logo"),
         de = R("span", "pset-math-brand-name", "Psetter™"),
+        ve = R(
+          "span",
+          "pset-math-brand-version",
+          `v${getExtensionApi()?.runtime?.getManifest?.().version ?? "0.0.0"}`,
+        ),
         ae = R("div", "pset-math-brand-links"),
         le = R("a", void 0, "GitHub"),
-        ce = R("a", "pset-math-feedback-link", "Feedback");
+        ce = Be("Feedback", "pset-math-feedback-link", "Open feedback form");
       pe.src = getExtensionUrl("icons/psetter-px-logo-white.svg");
       pe.alt = "P^x";
       le.href = "https://github.com/pedrovillafranco/psetter";
       le.target = "_blank";
       le.rel = "noopener noreferrer";
-      ce.setAttribute("role", "button");
-      ce.setAttribute("tabindex", "0");
-      ce.setAttribute("aria-label", "Open feedback form");
-      let openFeedback = () => this.hooks.onFeedbackRequested?.();
-      ce.addEventListener("click", openFeedback);
-      ce.addEventListener("keydown", (event) => {
-        if (event.key !== "Enter" && event.key !== " ") return;
+      ce.type = "button";
+      this.listenScoped(this.detailsDisposers, ce, "click", (event) => {
         event.preventDefault();
-        openFeedback();
+        event.stopPropagation();
+        this.hooks.onFeedbackRequested?.();
       });
       ce.hidden = this.settings.feedbackDisabled === !0;
       ae.append(le, ce);
-      ie.append(pe, de, ae);
+      ie.append(pe, de, ve, ae);
       return (
         (this.paletteGrid = re),
         t.append(z, re, ie),
         this.setSymbolsOpen(this.symbolsOpen),
-        loadPsetterSymbolsPreference().then((n) => {
-          n !== null &&
+        (() => {
+          let n = this.lifecycleGeneration;
+          loadPsetterSymbolsPreference().then((s) => {
+          this.isCurrent() && n === this.lifecycleGeneration && s !== null &&
             !this.symbolsPreferenceTouched &&
-            this.setSymbolsOpen(n);
-        }).catch(() => {}),
+            this.setSymbolsOpen(s);
+          }).catch(() => {});
+        })(),
         this.renderPalette(""),
         t
       );
@@ -16106,7 +16802,7 @@ ${t.innerHTML}`;
       }
       return (
         (i.dataset.symbolId = t.id),
-        i.addEventListener("click", () => this.insertSymbol(t)),
+        this.listenScoped(this.detailsDisposers, i, "click", () => this.insertSymbol(t)),
         i
       );
     }
@@ -16122,8 +16818,9 @@ ${t.innerHTML}`;
       );
     }
     insertSymbol(t) {
-      if (!this.mathField) return;
+      if (!this.isCurrent() || !this.mathField) return;
       this.clearActivationRestore();
+      this.editorDirty = !0;
       let i = new Map([
         ["pi", "\\pi"],
         ["alpha", "\\alpha"],
@@ -16154,11 +16851,26 @@ ${t.innerHTML}`;
         ["ln", "\\ln"],
         ["log", "\\log"],
       ]);
+      let n = () => {
+        if (t.semanticKind === "function") {
+          if (t.outputName === "sqrt") this.mathField.cmd("\\sqrt");
+          else {
+            r.has(t.outputName)
+              ? this.mathField.cmd(r.get(t.outputName))
+              : this.mathField.write(t.latex);
+            typeof this.mathField.typedText == "function"
+              ? this.mathField.typedText("(")
+              : this.mathField.write("(");
+          }
+          return;
+        }
+        this.mathField.write(t.latex);
+      };
       // Insert structural symbols through MathQuill's commands rather than
       // writing raw LaTeX. Raw placeholders can become literal operators or
       // leave the cursor outside the intended structure.
-      (t.kind === "term"
-        ? this.mathField.write(t.latex)
+      (t.kind === "context"
+        ? n()
         : t.id === "plus"
         ? this.mathField.typedText("+")
         : t.id === "abs"
@@ -16178,28 +16890,27 @@ ${t.innerHTML}`;
         this.mathField.focus(),
         this.recompute());
     }
-    recompute() {
-      if (!this.mathField) return;
-      this.contextAliases = discoverPsetterContextAliases(this.input);
-      let t = this.mathField.latex(),
-        i = this.getDraftValue(t),
-        r = Rn(t, this.mode, this.contextAliases);
-      let n = r.isSupported ? r.output : i;
+    recompute(t = !0) {
+      if (!this.mathField || !this.isCurrent()) return;
+      let i = this.mathField.latex(),
+        r = this.getDraftValue(i),
+        n = Rn(i, this.mode, this.semanticContext);
       if (this.activationPending) {
-        this.activationBaselineLatex = t;
-        this.activationInitialOutput = n;
+        this.activationBaselineLatex = i;
+        this.activationInitialOutput = n.status === "safe" ? n.output : this.input.value;
       }
-      ((this.draftExpression = i),
-        (this.lastResult = r),
-        this.writeNativeValue(n));
-      this.recordHistoryState(t);
+      ((this.draftExpression = r),
+        (this.lastResult = n),
+        t && this.editorDirty && n.status === "safe" && this.writeNativeValue(n.output));
+      this.recordHistoryState(i);
       this.renderRestoreControl();
       (this.queueTermCombinationCount(),
-        this.renderResult(r),
+        this.renderResult(n),
         this.fitEquationHeight(),
         __PSETTER_DEV_BUILD__ && globalThis.__psetterQaHarness?.recordController(this));
     }
     queueTermCombinationCount() {
+      if (this.lastResult?.status !== "safe") return;
       let t = (this.lastResult?.output?.match(/\*/g) ?? []).length;
       if (!this.hasInitialResult) {
         ((this.hasInitialResult = !0), (this.trackedProductCount = t));
@@ -16207,6 +16918,7 @@ ${t.innerHTML}`;
       }
       (this.operationCountTimer && window.clearTimeout(this.operationCountTimer),
         (this.operationCountTimer = window.setTimeout(() => {
+          if (!this.isCurrent()) return;
           let i = (this.lastResult?.output?.match(/\*/g) ?? []).length,
             r = i - this.trackedProductCount;
           ((this.trackedProductCount = i),
@@ -16217,7 +16929,8 @@ ${t.innerHTML}`;
       this.equationFitFrame && window.cancelAnimationFrame(this.equationFitFrame);
       this.equationFitFrame = window.requestAnimationFrame(() => {
         this.equationFitFrame = void 0;
-        if (!this.controls || !this.editorSurface || !this.input.isConnected) return;
+        if (!this.isCurrent() || !this.controls || !this.editorSurface || !this.input.isConnected)
+          return;
         let t = this.editorSurface.querySelector(".pset-math-field"),
           i = this.editorSurface.querySelector(".mq-root-block"),
           r = t ? getComputedStyle(t) : null,
@@ -16238,8 +16951,11 @@ ${t.innerHTML}`;
           t.errors.length > 0
             ? ((this.statusText.textContent = "Needs manual entry"),
               this.statusText.classList.add("error"))
+            : t.status !== "safe"
+              ? ((this.statusText.textContent = "Preview only — not sent to MITx"),
+                this.statusText.classList.add("warning"))
             : t.warnings.length > 0
-              ? ((this.statusText.textContent = "Converted with a warning"),
+              ? ((this.statusText.textContent = "Ready for MITx with a grader note"),
                 this.statusText.classList.add("warning"))
               : ((this.statusText.textContent = "Ready for MITx"),
                 this.statusText.classList.add("ready"))));
@@ -16267,6 +16983,12 @@ ${t.innerHTML}`;
     }
   };
   if (__PSETTER_DEV_BUILD__) {
+    Mt.prototype.convertLatexForQa = function (t) {
+      return Rn(t, this.mode, this.semanticContext);
+    };
+    Mt.prototype.nativeEquivalentForQa = function (t) {
+      return psetterNativeEquivalent(this.input.value, t);
+    };
     Mt.prototype.getQaSnapshot = function (t = {}) {
       let i = this.mathField?.latex?.() ?? "",
         r = this.getDraftValue(i),
@@ -16274,6 +16996,8 @@ ${t.innerHTML}`;
           output: "",
           warnings: [],
           errors: [],
+          safetyReasons: [],
+          status: "safe",
           isSupported: !0,
         };
       return {
@@ -16294,8 +17018,9 @@ ${t.innerHTML}`;
         mitx_output: n.output,
         warnings: [...n.warnings],
         errors: [...n.errors],
-        status:
-          n.errors.length > 0 ? "error" : n.warnings.length > 0 ? "warning" : "ready",
+        status: n.status === "safe"
+          ? n.warnings.length > 0 ? "warning" : "ready"
+          : n.status,
         ...t,
       };
     };
@@ -16477,7 +17202,7 @@ ${t.innerHTML}`;
     settings;
     remoteConfig = PSETTER_REMOTE_API?.defaults ?? {
       disabled: !1,
-      feedbackDisabled: !1,
+      feedbackDisabled: PSETTER_CONFIG.feedbackEnabled !== true,
       minimumSupportedVersion: null,
       compatibilityWarning: null,
       maintenanceMessage: null,
@@ -16485,18 +17210,19 @@ ${t.innerHTML}`;
       features: { contextSymbols: !0, symbolSearch: !0 },
     };
     controllers = new Map();
+    editorStates = new Map();
+    editorStateLimit = 128;
     activeController;
     observer;
     scanQueued = !1;
+    scanFrame;
     globalToggle;
     globalControls;
     developerMessageButton;
     developerMessagePanel;
     developerMessageReadId = null;
     globalNotice;
-    feedbackOverlay;
-    feedbackFrame;
-    feedbackPreviousFocus;
+    feedbackWindow;
     isTopWindow = window.top === window.self;
     started = !1;
     disposed = !1;
@@ -16504,6 +17230,99 @@ ${t.innerHTML}`;
     remoteConfigIntervalId;
     storageUnsubscribe = () => {};
     cleanupListeners = [];
+    settingsWriteGeneration = 0;
+    runtimeOwner = getExtensionApi()?.runtime?.id ?? "psetter";
+    runtimeOwnerAttribute = "data-psetter-runtime-owner";
+    runtimeOwnerEvent = "psetter-runtime-owner-changed";
+    disabledAttribute = "data-psetter-disabled";
+    scanCount = 0;
+    relevantMutationBatchCount = 0;
+    isRuntimeOwner() {
+      return (
+        !this.disposed &&
+        document.documentElement.getAttribute(this.runtimeOwnerAttribute) === this.runtimeOwner
+      );
+    }
+    claimRuntimeOwnership() {
+      this.listen(document, this.runtimeOwnerEvent, () => {
+        if (
+          !this.disposed &&
+          document.documentElement.getAttribute(this.runtimeOwnerAttribute) !== this.runtimeOwner
+        ) {
+          armPsetterOwnershipStandby(this.runtimeOwner);
+          this.dispose(!1);
+        }
+      });
+      let t = document.documentElement.getAttribute(this.runtimeOwnerAttribute);
+      // Use the same deterministic winner in the top page and every MITx
+      // iframe. A last-writer-wins lease can select different installed
+      // copies in different frames, so the visible top toggle would not own
+      // the answer editor it is expected to close.
+      if (t && t !== this.runtimeOwner && t.localeCompare(this.runtimeOwner) < 0)
+        return !1;
+      document.documentElement.setAttribute(this.runtimeOwnerAttribute, this.runtimeOwner);
+      document.dispatchEvent(new Event(this.runtimeOwnerEvent));
+      this.removeOrphanedPsetterUi({ includeGlobal: this.isTopWindow });
+      return document.documentElement.getAttribute(this.runtimeOwnerAttribute) === this.runtimeOwner;
+    }
+    removeOrphanedPsetterUi({ includeGlobal = !1 } = {}) {
+      for (let t of document.querySelectorAll(".pset-math-takeover")) {
+        let i = t.querySelector(psetterNativeAnswerSelector) || t.querySelector('input[type="text"]');
+        if (i && t.parentNode) t.parentNode.insertBefore(i, t);
+        t.remove();
+      }
+      for (let t of document.querySelectorAll([
+        ".pset-math-trigger",
+        ".pset-math-restore-control",
+        ".pset-math-restore-hint",
+        ".pset-math-details-slot",
+      ].join(","))) t.remove();
+      for (let t of document.querySelectorAll("[data-pset-math-enhanced]")) {
+        t.removeAttribute("data-pset-math-enhanced");
+        t.classList.remove("pset-math-native-covered", "pset-math-active-field");
+      }
+      if (includeGlobal)
+        for (let t of document.querySelectorAll([
+          ".pset-math-global-controls",
+          ".pset-math-remote-notice",
+          ".pset-math-developer-message-panel",
+        ].join(","))) t.remove();
+    }
+    editorStateKey(t) {
+      if (!t) return "";
+      if (t.id) return `id:${t.id}`;
+      if (t.name) return `name:${t.name}`;
+      let i = psetterProblemSourceRoot(t),
+        r = i?.id || i?.getAttribute?.("data-usage-id") || "problem",
+        n = i ? [...i.querySelectorAll(psetterNativeAnswerSelector)].indexOf(t) : -1;
+      return `${location.pathname}:${r}:${n}`;
+    }
+    readEditorState(t) {
+      let i = this.editorStateKey(t);
+      if (!i) return;
+      let r = this.editorStates.get(i);
+      if (r) {
+        this.editorStates.delete(i);
+        this.editorStates.set(i, r);
+      }
+      return r;
+    }
+    writeEditorState(t, i) {
+      let r = this.editorStateKey(t);
+      if (!r || !i) return;
+      this.editorStates.delete(r);
+      this.editorStates.set(r, { ...i });
+      while (this.editorStates.size > this.editorStateLimit)
+        this.editorStates.delete(this.editorStates.keys().next().value);
+    }
+    clearEditorState(t) {
+      let i = this.editorStateKey(t);
+      i && this.editorStates.delete(i);
+    }
+    setPageDisabled(t) {
+      if (t) document.documentElement.setAttribute(this.disabledAttribute, "true");
+      else document.documentElement.removeAttribute(this.disabledAttribute);
+    }
     runtimeApi;
     runtimeMessageListener;
     listen(t, i, r, n) {
@@ -16583,67 +17402,36 @@ ${t.innerHTML}`;
       if (!unread) this.closeDeveloperMessage();
     }
     openFeedback() {
-      if (this.remoteConfig.feedbackDisabled) return !1;
-      if (!this.isTopWindow) {
-        try {
-          window.top.postMessage({ target: "psetter-open-feedback" }, "*");
-          return !0;
-        } catch {
-          return !1;
-        }
-      }
-      if (this.feedbackOverlay) {
-        this.feedbackFrame?.focus();
+      if (this.remoteConfig.feedbackDisabled || PSETTER_CONFIG.feedbackEnabled !== true) return !1;
+      const feedbackHostPath = PSETTER_CONFIG.feedbackHostPath;
+      if (!feedbackHostPath) return !1;
+      if (this.feedbackWindow && !this.feedbackWindow.closed) {
+        this.feedbackWindow.focus();
         return !0;
       }
-      let t = R("div", "pset-math-feedback-overlay"),
-        i = R("div", "pset-math-feedback-dialog"),
-        r = Be("×", "pset-math-feedback-close", "Close feedback form"),
-        n = R("iframe", "pset-math-feedback-frame");
-      i.setAttribute("role", "dialog");
-      i.setAttribute("aria-modal", "true");
-      i.setAttribute("aria-label", "Psetter feedback");
-      n.setAttribute("title", "Psetter feedback form");
-      n.setAttribute("referrerpolicy", "no-referrer");
       try {
-        let s = new URL(getExtensionUrl("feedback-host.html"));
+        const s = new URL(getExtensionUrl(feedbackHostPath));
         s.searchParams.set(
           "version",
           getExtensionApi()?.runtime?.getManifest?.().version ?? "unknown",
         );
-        n.src = s.href;
+        const popupName = `psetter-feedback-${getExtensionApi()?.runtime?.id ?? "window"}`;
+        const popup = window.open(
+          s.href,
+          popupName,
+          "popup=yes,width=500,height=500,resizable=yes,scrollbars=yes",
+        );
+        if (!popup) return !1;
+        this.feedbackWindow = popup;
+        popup.focus();
+        return !0;
       } catch {
         return !1;
       }
-      r.addEventListener("click", () => this.closeFeedback());
-      t.addEventListener("pointerdown", (s) => {
-        s.target === t && this.closeFeedback();
-      });
-      t.addEventListener("keydown", (s) => {
-        if (s.key === "Escape") {
-          s.preventDefault();
-          this.closeFeedback();
-        }
-      });
-      i.append(r, n);
-      t.appendChild(i);
-      this.feedbackPreviousFocus = document.activeElement;
-      this.feedbackOverlay = t;
-      this.feedbackFrame = n;
-      document.documentElement.classList.add("pset-math-feedback-open");
-      (document.body ?? document.documentElement).appendChild(t);
-      r.focus();
-      return !0;
     }
-    closeFeedback(t = !0) {
-      if (!this.feedbackOverlay) return;
-      this.feedbackOverlay.remove();
-      this.feedbackOverlay = void 0;
-      this.feedbackFrame = void 0;
-      document.documentElement.classList.remove("pset-math-feedback-open");
-      let i = this.feedbackPreviousFocus;
-      this.feedbackPreviousFocus = void 0;
-      if (t && i?.isConnected && typeof i.focus === "function") i.focus();
+    closeFeedback() {
+      if (this.feedbackWindow && !this.feedbackWindow.closed) this.feedbackWindow.close();
+      this.feedbackWindow = void 0;
     }
     controllerSettings() {
       return {
@@ -16652,15 +17440,33 @@ ${t.innerHTML}`;
         feedbackDisabled: this.remoteConfig.feedbackDisabled,
       };
     }
+    persistSettings() {
+      const generation = ++this.settingsWriteGeneration;
+      return savePsetterSettings(
+        this.settings,
+        () =>
+          !this.disposed &&
+          this.isRuntimeOwner() &&
+          generation === this.settingsWriteGeneration,
+      );
+    }
     async start() {
       if (this.started || this.disposed) return;
       this.started = !0;
+      if (!this.claimRuntimeOwnership()) {
+        armPsetterOwnershipStandby(this.runtimeOwner);
+        this.dispose(!1);
+        return;
+      }
       [this.settings, this.remoteConfig, this.developerMessageReadId] = await Promise.all([
         _i(),
         PSETTER_REMOTE_API?.loadCached?.() ?? Promise.resolve(this.remoteConfig),
         PSETTER_REMOTE_API?.readDeveloperMessageReadId?.() ?? Promise.resolve(null),
       ]);
-      if (this.disposed) return;
+      if (this.disposed || !this.isRuntimeOwner()) {
+        this.dispose();
+        return;
+      }
       this.mountGlobalToggle();
       this.mountGlobalNotice();
       this.applySettings();
@@ -16689,13 +17495,17 @@ ${t.innerHTML}`;
           const onRemoteConfigChanged = async (changes, areaName) => {
             if (areaName !== "local" || !changes[remoteConfigKey]) return;
             const nextConfig = await PSETTER_REMOTE_API?.loadCached?.();
-            if (!this.disposed && nextConfig) this.applyRemoteConfig(nextConfig);
+            if (this.isRuntimeOwner() && nextConfig) this.applyRemoteConfig(nextConfig);
           };
           storage.onChanged.addListener(onRemoteConfigChanged);
           this.cleanupListeners.push(() => storage.onChanged.removeListener(onRemoteConfigChanged));
         }
       } catch {}
-      this.observer = new MutationObserver(() => this.queueScan());
+      this.observer = new MutationObserver((t) => {
+        if (!this.mutationsNeedScan(t)) return;
+        this.relevantMutationBatchCount += 1;
+        this.queueScan();
+      });
       this.observer.observe(document.documentElement, {
         childList: !0,
         subtree: !0,
@@ -16732,8 +17542,12 @@ ${t.innerHTML}`;
       this.listen(window, "message", (t) => {
         let i = t.data;
         if (!isAllowedPsetterMessageOrigin(t.origin)) return;
-        i?.target === "psetter-open-feedback" && this.isTopWindow && this.openFeedback();
-        if (i?.target === "psetter-remote-config-request" && t.source) {
+        let fromParent = !this.isTopWindow && t.source === window.parent,
+          fromDirectChild = this.isTopWindow && isPsetterDirectChildWindow(t.source);
+        if (
+          i?.target === "psetter-remote-config-request" &&
+          fromDirectChild
+        ) {
           try {
             t.source.postMessage(
               { target: "psetter-remote-config-update", config: this.remoteConfig },
@@ -16741,21 +17555,29 @@ ${t.innerHTML}`;
             );
           } catch {}
         }
+        if (
+          i?.target === "psetter-settings-update" &&
+          fromParent &&
+          i.settings
+        ) {
+          this.settings = zi(i.settings);
+          this.applySettings();
+        }
+        if (
+          fromParent &&
+          (i?.target === "psetter-disable" || i?.target === "psetter-enable")
+        ) {
+          this.settings = {
+            ...(this.settings ?? qe),
+            enabled: i.target === "psetter-enable",
+            inlineEnabledDefault: i.target === "psetter-enable",
+          };
+          (this.applySettings(), this.notifyFrames(i.target));
+        }
         i?.target === "psetter-remote-config-update" &&
-          !this.isTopWindow &&
+          fromParent &&
           i.config &&
           this.applyRemoteConfig(i.config);
-      });
-      this.listen(window, "message", (t) => {
-        if (
-          t.data?.target !== "psetter-feedback-close" ||
-          t.source !== this.feedbackFrame?.contentWindow
-        ) return;
-        let i = "";
-        try {
-          i = new URL(getExtensionUrl("")).origin;
-        } catch {}
-        t.origin === i && this.closeFeedback();
       });
       this.intervalId = window.setInterval(() => this.reconcileSettings(), 1500);
       this.isTopWindow &&
@@ -16768,11 +17590,14 @@ ${t.innerHTML}`;
         if (!psetterIsPackagedDemo) this.refreshRemoteConfig();
       } else {
         try {
-          window.parent.postMessage({ target: "psetter-remote-config-request" }, "*");
+          window.parent.postMessage(
+            { target: "psetter-remote-config-request" },
+            location.origin,
+          );
         } catch {}
       }
     }
-    dispose() {
+    dispose(releaseOwnership = !0) {
       if (this.disposed) return;
       this.disposed = !0;
       this.storageUnsubscribe?.();
@@ -16783,6 +17608,9 @@ ${t.innerHTML}`;
       });
       this.observer?.disconnect();
       this.observer = void 0;
+      this.scanFrame && window.cancelAnimationFrame(this.scanFrame);
+      this.scanFrame = void 0;
+      this.scanQueued = !1;
       this.intervalId && window.clearInterval(this.intervalId);
       this.intervalId = void 0;
       this.remoteConfigIntervalId && window.clearInterval(this.remoteConfigIntervalId);
@@ -16793,6 +17621,7 @@ ${t.innerHTML}`;
       this.runtimeMessageListener = void 0;
       this.runtimeApi = void 0;
       this.disposeAll();
+      this.editorStates.clear();
       this.closeFeedback(!1);
       this.settings = void 0;
       this.closeDeveloperMessage();
@@ -16809,22 +17638,29 @@ ${t.innerHTML}`;
         delete globalThis.__psetterRuntime;
         document.documentElement.removeAttribute("data-pset-math-runtime");
       }
+      if (
+        releaseOwnership &&
+        document.documentElement.getAttribute(this.runtimeOwnerAttribute) === this.runtimeOwner
+      ) {
+        document.documentElement.removeAttribute(this.runtimeOwnerAttribute);
+        document.dispatchEvent(new Event(this.runtimeOwnerEvent));
+      }
     }
     async reconcileSettings() {
-      if (this.disposed) return;
+      if (this.disposed || !this.isRuntimeOwner()) return;
       let t = await _i();
       if (!this.disposed && (!this.settings || !settingsEqual(this.settings, t))) {
         ((this.settings = t), this.applySettings());
       }
     }
     async refreshRemoteConfig() {
-      if (this.disposed || !PSETTER_REMOTE_API?.load) return;
+      if (this.disposed || !this.isRuntimeOwner() || !PSETTER_REMOTE_API?.load) return;
       let t = await PSETTER_REMOTE_API.load({ force: !0 });
-      this.applyRemoteConfig(t);
+      this.isRuntimeOwner() && this.applyRemoteConfig(t);
     }
     applyRemoteConfig(t) {
       let r = PSETTER_REMOTE_API?.validate?.(t);
-      if (!r || this.disposed) return;
+      if (!r || this.disposed || !this.isRuntimeOwner()) return;
       let n = JSON.stringify(r) !== JSON.stringify(this.remoteConfig);
       this.remoteConfig = r;
       this.remoteConfig.feedbackDisabled && this.closeFeedback();
@@ -16940,17 +17776,32 @@ ${t.innerHTML}`;
       let t = this.settings.enabled === !1;
       ((this.settings = { ...this.settings, enabled: t, inlineEnabledDefault: t }),
         this.applySettings(),
-        // Persist first. A child frame polling storage must never overwrite a
-        // just-received off message with the previous on value.
-        await savePsetterSettings(this.settings));
+        this.notifyFrames(t ? "psetter-enable" : "psetter-disable"),
+        // Apply and notify synchronously so the visible toggle closes an
+        // active editor before the storage write settles.
+        await this.persistSettings());
+    }
+    notifyFrames(t) {
+      if (!t) return;
+      try {
+        for (let i of document.querySelectorAll("iframe")) {
+          let r = location.origin;
+          try {
+            r = new URL(i.src || location.href, location.href).origin;
+          } catch {}
+          i.contentWindow?.postMessage({ target: t }, r);
+        }
+      } catch {}
     }
     applySettings() {
-      if (this.settings) {
+      if (this.settings && this.isRuntimeOwner()) {
+        this.setPageDisabled(!this.settings.enabled || this.remoteConfig.disabled);
         this.renderGlobalToggle();
         if (!this.settings.enabled || this.remoteConfig.disabled) {
           (this.activeController?.deactivate(),
           (this.activeController = void 0)),
           this.disposeAll();
+          this.removeOrphanedPsetterUi();
           return;
         }
         for (let [t, i] of this.controllers) {
@@ -16966,25 +17817,48 @@ ${t.innerHTML}`;
       }
     }
     queueScan() {
-      if (this.disposed) return;
+      if (this.disposed || !this.isRuntimeOwner()) return;
       this.scanQueued ||
         ((this.scanQueued = !0),
-        window.requestAnimationFrame(() => {
-          ((this.scanQueued = !1), this.scan());
-        }));
+        (this.scanFrame = window.requestAnimationFrame(() => {
+          this.scanFrame = void 0;
+          this.scanQueued = !1;
+          this.isRuntimeOwner() && this.scan();
+        })));
+    }
+    mutationsNeedScan(t) {
+      let i = [
+        psetterNativeAnswerSelector,
+        ".problem, .problem-block, .capa, [data-usage-id][class*='problem']",
+        ".pset-math-takeover, [data-pset-math-enhanced]",
+      ].join(",");
+      let r = (n) => {
+        if (n?.nodeType !== Node.ELEMENT_NODE) return !1;
+        if (n.matches?.('[class*="pset-math-"]') && !n.matches?.(".pset-math-takeover"))
+          return !1;
+        return n.matches?.(i) || n.querySelector?.(i);
+      };
+      return t.some((n) => [...n.addedNodes, ...n.removedNodes].some(r));
     }
     scan() {
-      if (!this.disposed && this.settings?.enabled && !this.remoteConfig.disabled) {
+      if (this.isRuntimeOwner() && this.settings?.enabled && !this.remoteConfig.disabled) {
+        this.scanCount += 1;
         for (let [t, i] of this.controllers)
-          t.isConnected ||
+          (!t.isConnected ||
+            !i.trigger?.isConnected ||
+            (i.controls && (!i.controls.isConnected || !i.controls.contains(t)))) &&
             (i === this.activeController && (this.activeController = void 0),
             i.dispose(),
             this.controllers.delete(t));
         for (let t of $i(this.settings.showGenericFields)) {
           if (this.controllers.has(t.input)) continue;
           let i = new Mt(t.input, t.kind, this.controllerSettings(), {
+            isCurrentController: (r) =>
+              this.isRuntimeOwner() && this.controllers.get(r.input) === r,
             requestActivation: (r) => {
               if (
+                !this.isRuntimeOwner() ||
+                this.controllers.get(r.input) !== r ||
                 !this.settings?.enabled ||
                 this.remoteConfig.disabled ||
                 r.settings?.enabled === !1 ||
@@ -17003,13 +17877,18 @@ ${t.innerHTML}`;
               recordSafeTermCombination(r);
             },
             onDetailsToggled: async (r) => {
-              this.settings &&
+              this.isRuntimeOwner() && this.settings &&
                 ((this.settings = { ...this.settings, openDetails: r }),
-                await savePsetterSettings(this.settings));
+                await this.persistSettings());
             },
             onFeedbackRequested: () => this.openFeedback(),
-            onControllerStateChanged: () => {
-              this.renderGlobalToggle();
+            readEditorState: (r) => this.readEditorState(r),
+            writeEditorState: (r, n) => this.writeEditorState(r, n),
+            clearEditorState: (r) => this.clearEditorState(r),
+            onControllerStateChanged: (r) => {
+              this.isRuntimeOwner() &&
+                this.controllers.get(r.input) === r &&
+                this.renderGlobalToggle();
             },
           });
           (this.controllers.set(t.input, i),
@@ -17024,7 +17903,8 @@ ${t.innerHTML}`;
         this.controllers.clear());
     }
   };
-  (() => {
+  psetterLaunchRuntime = () => {
+    clearPsetterOwnershipStandby();
     globalThis.__psetterRuntime?.dispose?.();
     let e = new Ai();
     let i = (r, n, s) => {
@@ -17083,5 +17963,6 @@ ${t.innerHTML}`;
       isContextInvalidatedError(r) ||
         console.error("Psetter failed to initialize.", r);
     });
-  })();
+  };
+  psetterLaunchRuntime();
 })();

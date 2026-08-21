@@ -15,8 +15,13 @@ globalThis.chrome = {
     },
   },
 };
+let nextRemoteConfig = null;
 globalThis.fetch = async () => {
-  throw new Error("offline");
+  if (!nextRemoteConfig) throw new Error("offline");
+  return new Response(JSON.stringify(nextRemoteConfig), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
 };
 
 globalThis.__psetterConfig = Object.freeze({
@@ -152,8 +157,48 @@ test("handles no developer message and cached or default offline behavior", asyn
   assert.deepEqual(await api.load({ force: true }), api.defaults);
 });
 
+test("a stale accepted emergency disable remains sticky until a fresh valid release", async () => {
+  const disabledConfig = {
+    ...validConfig,
+    disabled: true,
+    maintenanceMessage: "Emergency compatibility pause",
+  };
+  storageState.testRemoteConfig = {
+    config: disabledConfig,
+    fetchedAt: Date.now() - 24 * 60 * 60 * 1000,
+  };
+  nextRemoteConfig = null;
+  assert.deepEqual(await api.loadCached(), disabledConfig);
+  assert.deepEqual(await api.load({ force: true }), disabledConfig);
+
+  nextRemoteConfig = validConfig;
+  assert.deepEqual(await api.load({ force: true }), validConfig);
+  assert.equal(storageState.testRemoteConfig.config.disabled, false);
+  nextRemoteConfig = null;
+});
+
 test("compares Chrome-style versions", () => {
   assert.equal(api.isVersionBelow("0.0.9", "0.1.0"), true);
   assert.equal(api.isVersionBelow("0.1.0", "0.1.0"), false);
   assert.equal(api.isVersionBelow("1.0.0.1", "1.0.0"), false);
+});
+
+test("community configuration is an explicit no-op without private infrastructure", async () => {
+  let fetchCalls = 0;
+  globalThis.fetch = async () => {
+    fetchCalls += 1;
+    throw new Error("community build must not fetch hosted configuration");
+  };
+  globalThis.__psetterConfig = Object.freeze({
+    remoteConfigKey: "communityRemoteConfig",
+    remoteConfigUrl: "",
+    feedbackEnabled: false,
+  });
+  const moduleUrl = new URL("../remote-config.js?community-boundary", import.meta.url);
+  await import(moduleUrl.href);
+  const communityApi = globalThis.__psetterRemoteConfig;
+  assert.equal(await communityApi.loadCached(), communityApi.defaults);
+  assert.equal(await communityApi.load({ force: true }), communityApi.defaults);
+  assert.equal(communityApi.defaults.feedbackDisabled, true);
+  assert.equal(fetchCalls, 0);
 });

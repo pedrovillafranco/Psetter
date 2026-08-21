@@ -846,6 +846,13 @@
   letter-spacing: -0.01em !important;
 }
 
+.pset-math-brand-version {
+  color: #fff !important;
+  font: 500 11px/1 Inter, Arial, sans-serif !important;
+  font-variant-numeric: tabular-nums !important;
+  white-space: nowrap !important;
+}
+
 .pset-math-brand-links {
   display: flex !important;
   align-items: center !important;

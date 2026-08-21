@@ -661,6 +661,19 @@ footer {
   padding-top: 11px;
   margin-top: 4px;
 }
+.footer-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.footer-version-separator {
+  color: var(--psetter-text-muted);
+}
+.extension-version {
+  color: var(--psetter-text-muted);
+  font-variant-numeric: tabular-nums;
+}
 .footer-links {
   display: inline-flex;
   align-items: center;

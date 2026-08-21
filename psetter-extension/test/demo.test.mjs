@@ -25,6 +25,5 @@ test("local demo uses packaged production code without broader site access", asy
   assert.match(runtime, /if \(!psetterIsPackagedDemo\) this\.refreshRemoteConfig\(\)/);
   assert.deepEqual(manifest.host_permissions, [
     "https://*.mitx.mit.edu/*",
-    "https://feedback.psetter.villafran.co/*",
   ]);
 });
