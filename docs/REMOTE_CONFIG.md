@@ -4,7 +4,7 @@ Psetter can use an optional remote configuration file. This file contains operat
 
 If the request fails, or if the response is invalid, Psetter uses safe local default values.
 
-The complete version 1 schema is:
+The current version 1 schema is:
 
 ```json
 {
@@ -56,6 +56,50 @@ The schema exposes no remotely interpreted fields for:
 Plain message strings may contain ordinary text that resembles any of these forms, but Psetter never parses or executes message strings as rules, URLs, expressions, markup, or code.
 
 A capability of this type requires a reviewed extension release. It must not be added only through a change to the hosted JSON file.
+
+## Queued developer messages
+
+The next extension release can accept up to two queued messages with the additive
+`developerMessages` field. When this field is present, omit the legacy
+`developerMessage` field:
+
+```json
+{
+  "schemaVersion": 1,
+  "disabled": false,
+  "feedbackDisabled": false,
+  "minimumSupportedVersion": null,
+  "compatibilityWarning": null,
+  "maintenanceMessage": null,
+  "developerMessages": [
+    {
+      "id": "release-note-1",
+      "title": "First notice",
+      "text": "The first notice appears first.",
+      "signature": "- Pedro"
+    },
+    {
+      "id": "release-note-2",
+      "title": "Second notice",
+      "text": "This notice appears after the first one is dismissed.",
+      "signature": "- Pedro"
+    }
+  ],
+  "features": {
+    "contextSymbols": true,
+    "symbolSearch": true
+  }
+}
+```
+
+Psetter shows one message at a time in the existing page and popup surfaces.
+Dismissing the first message advances to the next unread message; it does not
+interrupt the user or stack multiple panels. The existing `developerMessage`
+object remains supported, and the existing scalar read key is still written so
+an older installed copy can interpret the latest dismissal. Do not publish a
+`developerMessages` config until the supporting extension release is live;
+older clients reject unknown top-level fields and will safely fall back to
+their cached/default configuration.
 
 The predefined remote controls can only:
 

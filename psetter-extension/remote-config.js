@@ -14,8 +14,12 @@
   const DEVELOPER_MESSAGE_TITLE_MAX_LENGTH = 120;
   const DEVELOPER_MESSAGE_TEXT_MAX_LENGTH = 1000;
   const DEVELOPER_MESSAGE_SIGNATURE_MAX_LENGTH = 120;
+  const DEVELOPER_MESSAGE_MAX_COUNT = 2;
+  const DEVELOPER_MESSAGE_READ_IDS_MAX_COUNT = 100;
   const DEVELOPER_MESSAGE_READ_KEY =
     CONFIG.developerMessageReadKey ?? "psetterDeveloperMessageReadId";
+  const DEVELOPER_MESSAGE_READ_IDS_KEY =
+    CONFIG.developerMessageReadIdsKey ?? "psetterDeveloperMessageReadIds";
   const DEFAULT_CONFIG = deepFreeze({
     schemaVersion: 1,
     disabled: false,
@@ -102,6 +106,14 @@
     };
   }
 
+  function validateDeveloperMessages(value) {
+    if (!Array.isArray(value) || value.length > DEVELOPER_MESSAGE_MAX_COUNT) return null;
+    const messages = value.map(validateDeveloperMessage);
+    if (messages.some((message) => message === null)) return null;
+    const ids = new Set(messages.map((message) => message.id));
+    return ids.size === messages.length ? messages : null;
+  }
+
   function isVersion(value) {
     return value === null || /^(?:0|[1-9]\d{0,3})(?:\.(?:0|[1-9]\d{0,3})){2,3}$/.test(value);
   }
@@ -116,6 +128,7 @@
       "compatibilityWarning",
       "maintenanceMessage",
       "developerMessage",
+      "developerMessages",
       "features",
     ]);
     if (!hasOnlyKeys(value, allowedTopLevel) || value.schemaVersion !== 1) return null;
@@ -125,13 +138,26 @@
     if (!isVersion(value.minimumSupportedVersion)) return null;
     if (!isNullableMessage(value.compatibilityWarning)) return null;
     if (!isNullableMessage(value.maintenanceMessage)) return null;
-    const developerMessage = validateDeveloperMessage(value.developerMessage);
-    if (
-      value.developerMessage !== undefined &&
-      developerMessage === null &&
-      value.developerMessage !== null
-    ) {
-      return null;
+    const hasDeveloperMessages = Object.prototype.hasOwnProperty.call(value, "developerMessages");
+    let developerMessage;
+    let developerMessages;
+    if (hasDeveloperMessages) {
+      // Avoid two competing sources of truth. The normalized result still
+      // exposes developerMessage as the first queued item for older callers.
+      if (value.developerMessage !== undefined) return null;
+      developerMessages = validateDeveloperMessages(value.developerMessages);
+      if (developerMessages === null) return null;
+      developerMessage = developerMessages[0] ?? null;
+    } else {
+      developerMessage = validateDeveloperMessage(value.developerMessage);
+      if (
+        value.developerMessage !== undefined &&
+        developerMessage === null &&
+        value.developerMessage !== null
+      ) {
+        return null;
+      }
+      developerMessages = developerMessage ? [developerMessage] : [];
     }
     const features = value.features;
     if (!features || typeof features !== "object" || Array.isArray(features)) return null;
@@ -140,7 +166,7 @@
     if (typeof features.contextSymbols !== "boolean" || typeof features.symbolSearch !== "boolean") {
       return null;
     }
-    return deepFreeze({
+    const normalized = {
       schemaVersion: 1,
       disabled: value.disabled,
       feedbackDisabled: value.feedbackDisabled,
@@ -152,7 +178,9 @@
         contextSymbols: features.contextSymbols,
         symbolSearch: features.symbolSearch,
       },
-    });
+    };
+    if (hasDeveloperMessages) normalized.developerMessages = developerMessages;
+    return deepFreeze(normalized);
   }
 
   function compareVersions(left, right) {
@@ -203,6 +231,13 @@
     return isDeveloperMessageId(value) ? value : null;
   }
 
+  function normalizeDeveloperMessageReadIds(value) {
+    if (!Array.isArray(value)) return [];
+    return [...new Set(value.map(normalizeDeveloperMessageReadId).filter(Boolean))].slice(
+      -DEVELOPER_MESSAGE_READ_IDS_MAX_COUNT,
+    );
+  }
+
   async function readDeveloperMessageReadId() {
     try {
       const storage = getExtensionApi()?.storage?.local;
@@ -214,13 +249,37 @@
     }
   }
 
+  async function readDeveloperMessageReadIds() {
+    try {
+      const storage = getExtensionApi()?.storage?.local;
+      if (!storage?.get) return [];
+      const [idsResult, legacyResult] = await Promise.all([
+        storage.get(DEVELOPER_MESSAGE_READ_IDS_KEY),
+        storage.get(DEVELOPER_MESSAGE_READ_KEY),
+      ]);
+      return normalizeDeveloperMessageReadIds([
+        ...(idsResult?.[DEVELOPER_MESSAGE_READ_IDS_KEY] ?? []),
+        legacyResult?.[DEVELOPER_MESSAGE_READ_KEY],
+      ]);
+    } catch {
+      return [];
+    }
+  }
+
   async function dismissDeveloperMessage(id) {
     const normalizedId = normalizeDeveloperMessageReadId(id);
     if (!normalizedId) return false;
     try {
       const storage = getExtensionApi()?.storage?.local;
       if (!storage?.set) return false;
-      await storage.set({ [DEVELOPER_MESSAGE_READ_KEY]: normalizedId });
+      const readIds = await readDeveloperMessageReadIds();
+      const nextReadIds = normalizeDeveloperMessageReadIds([...readIds, normalizedId]);
+      // Keep writing the legacy scalar as well as the new list so an older
+      // installed copy can continue to interpret the latest dismissal.
+      await storage.set({
+        [DEVELOPER_MESSAGE_READ_KEY]: normalizedId,
+        [DEVELOPER_MESSAGE_READ_IDS_KEY]: nextReadIds,
+      });
       return true;
     } catch {
       return false;
@@ -228,7 +287,10 @@
   }
 
   function isDeveloperMessageUnread(message, readId) {
-    return Boolean(message && isDeveloperMessageId(message.id) && message.id !== readId);
+    const readIds = Array.isArray(readId)
+      ? normalizeDeveloperMessageReadIds(readId)
+      : [normalizeDeveloperMessageReadId(readId)].filter(Boolean);
+    return Boolean(message && isDeveloperMessageId(message.id) && !readIds.includes(message.id));
   }
 
   async function fetchConfig() {
@@ -322,8 +384,11 @@
     validate,
     remoteConfigKey: CACHE_KEY,
     developerMessageReadKey: DEVELOPER_MESSAGE_READ_KEY,
+    developerMessageReadIdsKey: DEVELOPER_MESSAGE_READ_IDS_KEY,
     normalizeDeveloperMessageReadId,
+    normalizeDeveloperMessageReadIds,
     readDeveloperMessageReadId,
+    readDeveloperMessageReadIds,
     dismissDeveloperMessage,
     isDeveloperMessageUnread,
     compareVersions,

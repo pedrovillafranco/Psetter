@@ -55,6 +55,9 @@ async function createRuntime(html, options = {}) {
     openDetails: false,
   };
   const storage = { psetMathSettings: settings };
+  const configuredRemoteConfig = options.remoteConfig ?? remoteConfig;
+  const configuredReadId = options.developerMessageReadId ?? null;
+  const configuredReadIds = options.developerMessageReadIds ?? [];
   const listeners = new Set();
   let runtimeMessageListener;
   window.chrome = {
@@ -88,15 +91,21 @@ async function createRuntime(html, options = {}) {
     },
   };
   window.__psetterRemoteConfig = {
-    defaults: remoteConfig,
+    defaults: configuredRemoteConfig,
     remoteConfigKey: "remoteConfig",
     developerMessageReadKey: "developerMessageRead",
     validate: (value) => value,
-    loadCached: async () => remoteConfig,
-    load: async () => remoteConfig,
-    readDeveloperMessageReadId: async () => null,
+    loadCached: async () => configuredRemoteConfig,
+    load: async () => configuredRemoteConfig,
+    readDeveloperMessageReadId: async () => configuredReadId,
+    readDeveloperMessageReadIds: async () => configuredReadIds,
+    dismissDeveloperMessage: async () => true,
     normalizeDeveloperMessageReadId: () => null,
-    isDeveloperMessageUnread: () => false,
+    normalizeDeveloperMessageReadIds: (value) => Array.isArray(value) ? value : [],
+    isDeveloperMessageUnread: (message, readId) => {
+      const readIds = Array.isArray(readId) ? readId : [readId];
+      return Boolean(message?.id && !readIds.includes(message.id));
+    },
     isVersionBelow: () => false,
   };
   window.eval(jquery);
@@ -199,6 +208,59 @@ test("context insertion preserves function and alias semantics", async () => {
     aliasController.deactivate();
     aliasController.activate();
     assert.equal(aliasController.input.value, "hati");
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("queued developer messages use one page panel and advance after dismissal", async () => {
+  const first = {
+    id: "notice-1",
+    title: "First notice",
+    text: "First text",
+    signature: "- Pedro",
+  };
+  const second = {
+    id: "notice-2",
+    title: "Second notice",
+    text: "Second text",
+    signature: "- Pedro",
+  };
+  const { developerMessage: _legacyMessage, ...queuedConfig } = remoteConfig;
+  queuedConfig.developerMessages = [first, second];
+  const { dom, window } = await createRuntime(
+    problem("queued_notifications", "<p>Find x.</p>"),
+    { remoteConfig: queuedConfig },
+  );
+  try {
+    const manager = window.__psetterRuntime;
+    assert.equal(manager.developerMessageButton.hidden, false);
+    assert.equal(manager.openDeveloperMessage(), true);
+    assert.equal(
+      manager.developerMessagePanel.querySelector(".pset-math-developer-message-title").textContent,
+      first.title,
+    );
+    assert.equal(
+      manager.developerMessagePanel.querySelector(".pset-math-developer-message-progress").textContent,
+      "1 of 2",
+    );
+
+    assert.equal(await manager.dismissDeveloperMessage(), true);
+    assert.equal(manager.developerMessagePanel, undefined);
+    assert.equal(manager.developerMessageButton.hidden, false, "second message remains queued");
+    assert.equal(manager.openDeveloperMessage(), true);
+    assert.equal(
+      manager.developerMessagePanel.querySelector(".pset-math-developer-message-title").textContent,
+      second.title,
+    );
+    assert.equal(
+      manager.developerMessagePanel.querySelector(".pset-math-developer-message-progress").textContent,
+      "2 of 2",
+    );
+
+    assert.equal(await manager.dismissDeveloperMessage(), true);
+    assert.equal(manager.developerMessageButton.hidden, true, "queue is empty");
   } finally {
     window.__psetterRuntime?.dispose();
     dom.window.close();

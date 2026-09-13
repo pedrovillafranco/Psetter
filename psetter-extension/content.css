@@ -112,6 +112,13 @@
   text-align: left !important;
 }
 
+.pset-math-developer-message-progress {
+  flex: 0 0 auto !important;
+  color: rgb(255 255 255 / 82%) !important;
+  font: 650 11px/1 Inter, Arial, sans-serif !important;
+  white-space: nowrap !important;
+}
+
 .pset-math-developer-message-header-logo {
   display: block !important;
   flex: 0 0 auto !important;

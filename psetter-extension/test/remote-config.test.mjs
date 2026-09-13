@@ -124,8 +124,42 @@ test("accepts bounded developer message text and rejects executable-shaped field
   );
 });
 
+test("accepts up to two queued developer messages while preserving the first-message compatibility view", () => {
+  const { developerMessage, ...withoutLegacyMessage } = validConfig;
+  const first = { ...developerMessage, id: "notice-1", title: "First notice" };
+  const second = { ...developerMessage, id: "notice-2", title: "Second notice" };
+  const normalized = api.validate({
+    ...withoutLegacyMessage,
+    developerMessages: [first, second],
+  });
+  assert.deepEqual(normalized.developerMessages, [first, second]);
+  assert.deepEqual(normalized.developerMessage, first);
+  assert.equal(
+    api.validate({
+      ...withoutLegacyMessage,
+      developerMessages: [first, second, { ...second, id: "notice-3" }],
+    }),
+    null,
+  );
+  assert.equal(
+    api.validate({
+      ...withoutLegacyMessage,
+      developerMessages: [first, { ...second, id: first.id }],
+    }),
+    null,
+  );
+  assert.equal(
+    api.validate({
+      ...validConfig,
+      developerMessages: [first, second],
+    }),
+    null,
+  );
+});
+
 test("tracks unread state and persists dismissal", async () => {
   delete storageState.testDeveloperMessageReadId;
+  delete storageState.testDeveloperMessageReadIds;
   assert.equal(api.isDeveloperMessageUnread(validConfig.developerMessage, null), true);
   assert.equal(await api.dismissDeveloperMessage(validConfig.developerMessage.id), true);
   assert.equal(await api.readDeveloperMessageReadId(), validConfig.developerMessage.id);
@@ -133,6 +167,27 @@ test("tracks unread state and persists dismissal", async () => {
     api.isDeveloperMessageUnread(validConfig.developerMessage, validConfig.developerMessage.id),
     false,
   );
+  delete storageState.testDeveloperMessageReadId;
+  delete storageState.testDeveloperMessageReadIds;
+});
+
+test("persists individual queued dismissals and carries the legacy read ID", async () => {
+  delete storageState.testDeveloperMessageReadId;
+  delete storageState.testDeveloperMessageReadIds;
+  const first = { ...validConfig.developerMessage, id: "notice-1" };
+  const second = { ...validConfig.developerMessage, id: "notice-2" };
+
+  assert.equal(await api.dismissDeveloperMessage(first.id), true);
+  assert.equal((await api.readDeveloperMessageReadIds()).at(-1), first.id);
+  assert.equal(api.isDeveloperMessageUnread(second, [first.id]), true);
+  assert.equal(api.isDeveloperMessageUnread(first, [first.id]), false);
+
+  assert.equal(await api.dismissDeveloperMessage(second.id), true);
+  const readIds = await api.readDeveloperMessageReadIds();
+  assert.equal(readIds.includes(first.id), true);
+  assert.equal(readIds.at(-1), second.id);
+  assert.equal(await api.readDeveloperMessageReadId(), second.id);
+  assert.equal(api.isDeveloperMessageUnread(second, [first.id, second.id]), false);
 });
 
 test("shows a new message ID after an older message was dismissed", () => {

@@ -81,18 +81,21 @@
   const feedbackLink = getNode("#feedbackLink");
   const extensionVersion = getNode("#extensionVersion");
   const developerMessageNotice = getNode("#developerMessageNotice");
+  const developerMessageQueue = getNode("#developerMessageQueue");
   const developerMessageTeaser = getNode("#developerMessageTeaser");
   const developerMessageOpen = getNode("#developerMessageOpen");
   const developerMessagePanel = getNode("#developerMessagePanel");
   const developerMessageTitle = getNode("#developerMessageTitle");
   const developerMessageText = getNode("#developerMessageText");
   const developerMessageSignature = getNode("#developerMessageSignature");
+  const developerMessageProgress = getNode("#developerMessageProgress");
   const developerMessageClose = getNode("#developerMessageClose");
 
   let settings = defaults;
   let usage = { safeTermCombinations: 0, dailySafeTermCombinations: {} };
   let selectedImpactRange = "all";
   let developerMessageReadId = null;
+  let developerMessageReadIds = [];
   let developerMessagePanelOpen = false;
   let remoteConfig = REMOTE_API?.defaults ?? {
     disabled: false,
@@ -199,46 +202,80 @@
   }
 
   function isDeveloperMessageUnread() {
-    return Boolean(
-      REMOTE_API?.isDeveloperMessageUnread?.(
-        remoteConfig.developerMessage,
+    return getUnreadDeveloperMessages().length > 0;
+  }
+
+  function getDeveloperMessages() {
+    if (Array.isArray(remoteConfig.developerMessages)) return remoteConfig.developerMessages;
+    return remoteConfig.developerMessage ? [remoteConfig.developerMessage] : [];
+  }
+
+  function getDeveloperMessageReadIds() {
+    return [
+      ...new Set([
+        ...(Array.isArray(developerMessageReadIds) ? developerMessageReadIds : []),
         developerMessageReadId,
-      ),
-    );
+      ].filter(Boolean)),
+    ];
+  }
+
+  function isOneDeveloperMessageUnread(message) {
+    if (!message) return false;
+    return REMOTE_API?.isDeveloperMessageUnread
+      ? Boolean(REMOTE_API.isDeveloperMessageUnread(message, getDeveloperMessageReadIds()))
+      : !getDeveloperMessageReadIds().includes(message.id);
+  }
+
+  function getUnreadDeveloperMessages() {
+    return getDeveloperMessages().filter(isOneDeveloperMessageUnread);
+  }
+
+  function getDeveloperMessagePosition(message) {
+    const messages = getDeveloperMessages();
+    const position = messages.findIndex((item) => item.id === message?.id);
+    return position < 0 || messages.length < 2 ? "" : `${position + 1} of ${messages.length}`;
   }
 
   function renderDeveloperMessage() {
-    const message = remoteConfig.developerMessage;
-    const unread = Boolean(message && isDeveloperMessageUnread());
+    const unreadMessages = getUnreadDeveloperMessages();
+    const message = unreadMessages[0] ?? null;
+    const unread = Boolean(message);
     developerMessageNotice.hidden = !unread || developerMessagePanelOpen;
     developerMessageOpen.hidden = !unread;
 
     if (!message) {
+      developerMessageQueue.textContent = "New from Psetter";
       developerMessagePanelOpen = false;
       developerMessagePanel.hidden = true;
       return;
     }
 
+    developerMessageQueue.textContent =
+      unreadMessages.length > 1
+        ? `${unreadMessages.length} notifications queued`
+        : "New from Psetter";
     developerMessageTeaser.textContent = message.title;
     developerMessageTitle.textContent = message.title;
     developerMessageText.textContent = message.text;
     developerMessageSignature.textContent = message.signature ?? "";
     developerMessageSignature.hidden = !message.signature;
+    developerMessageProgress.textContent = getDeveloperMessagePosition(message);
     developerMessagePanel.hidden = !developerMessagePanelOpen;
   }
 
   function openDeveloperMessagePanel() {
-    if (!isDeveloperMessageUnread()) return;
+    if (!getUnreadDeveloperMessages()[0]) return;
     developerMessagePanelOpen = true;
     renderDeveloperMessage();
     developerMessageClose.focus();
   }
 
   async function dismissDeveloperMessage() {
-    const message = remoteConfig.developerMessage;
+    const message = getUnreadDeveloperMessages()[0];
     const saved = await REMOTE_API?.dismissDeveloperMessage?.(message?.id);
     if (!saved) return;
     developerMessageReadId = message.id;
+    developerMessageReadIds = [...new Set([...getDeveloperMessageReadIds(), message.id])];
     developerMessagePanelOpen = false;
     renderDeveloperMessage();
   }
@@ -255,11 +292,19 @@
     try {
       const api = getExtensionApi();
       const readKey = REMOTE_API?.developerMessageReadKey;
-      if (!readKey) return;
+      const readIdsKey = REMOTE_API?.developerMessageReadIdsKey;
+      if (!readKey && !readIdsKey) return;
       api?.storage?.onChanged?.addListener((changes, areaName) => {
-        if (areaName !== "local" || !changes[readKey]) return;
-        developerMessageReadId =
-          REMOTE_API?.normalizeDeveloperMessageReadId?.(changes[readKey].newValue) ?? null;
+        if (areaName !== "local") return;
+        if (readKey && changes[readKey]) {
+          developerMessageReadId =
+            REMOTE_API?.normalizeDeveloperMessageReadId?.(changes[readKey].newValue) ?? null;
+        }
+        if (readIdsKey && changes[readIdsKey]) {
+          developerMessageReadIds =
+            REMOTE_API?.normalizeDeveloperMessageReadIds?.(changes[readIdsKey].newValue) ?? [];
+        }
+        if (!changes[readKey] && !(readIdsKey && changes[readIdsKey])) return;
         developerMessagePanelOpen = false;
         renderDeveloperMessage();
       });
@@ -451,11 +496,20 @@
     loadUsage(),
     REMOTE_API?.load?.(),
     REMOTE_API?.readDeveloperMessageReadId?.(),
+    REMOTE_API?.readDeveloperMessageReadIds?.() ?? Promise.resolve([]),
   ])
-    .then(([loadedSettings, loadedUsage, loadedRemoteConfig, loadedDeveloperMessageReadId]) => {
+    .then(([loadedSettings, loadedUsage, loadedRemoteConfig, loadedDeveloperMessageReadId, loadedDeveloperMessageReadIds]) => {
       settings = loadedSettings;
       usage = loadedUsage;
       developerMessageReadId = loadedDeveloperMessageReadId ?? null;
+      developerMessageReadIds = [
+        ...new Set([
+          ...(Array.isArray(loadedDeveloperMessageReadIds)
+            ? loadedDeveloperMessageReadIds
+            : []),
+          developerMessageReadId,
+        ].filter(Boolean)),
+      ];
       if (loadedRemoteConfig) remoteConfig = loadedRemoteConfig;
       renderSettings();
       renderRemoteConfig();

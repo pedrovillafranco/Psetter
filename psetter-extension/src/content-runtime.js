@@ -17257,7 +17257,9 @@ import {
     globalControls;
     developerMessageButton;
     developerMessagePanel;
+    developerMessageProgress;
     developerMessageReadId = null;
+    developerMessageReadIds = [];
     globalNotice;
     feedbackWindowId;
     isTopWindow = window.top === window.self;
@@ -17374,17 +17376,45 @@ import {
         return !1;
       }
     }
-    isDeveloperMessageUnread() {
-      return Boolean(
-        PSETTER_REMOTE_API?.isDeveloperMessageUnread?.(
-          this.remoteConfig.developerMessage,
+    getDeveloperMessages() {
+      if (Array.isArray(this.remoteConfig.developerMessages)) {
+        return this.remoteConfig.developerMessages;
+      }
+      return this.remoteConfig.developerMessage ? [this.remoteConfig.developerMessage] : [];
+    }
+    getDeveloperMessageReadIds() {
+      return [
+        ...new Set([
+          ...(Array.isArray(this.developerMessageReadIds)
+            ? this.developerMessageReadIds
+            : []),
           this.developerMessageReadId,
-        ),
+        ].filter(Boolean)),
+      ];
+    }
+    isOneDeveloperMessageUnread(message) {
+      if (!message) return !1;
+      const readIds = this.getDeveloperMessageReadIds();
+      return PSETTER_REMOTE_API?.isDeveloperMessageUnread
+        ? Boolean(PSETTER_REMOTE_API.isDeveloperMessageUnread(message, readIds))
+        : !readIds.includes(message.id);
+    }
+    getUnreadDeveloperMessages() {
+      return this.getDeveloperMessages().filter((message) =>
+        this.isOneDeveloperMessageUnread(message),
       );
     }
+    getDeveloperMessagePosition(message) {
+      const messages = this.getDeveloperMessages();
+      const position = messages.findIndex((item) => item.id === message?.id);
+      return position < 0 || messages.length < 2 ? "" : `${position + 1} of ${messages.length}`;
+    }
+    isDeveloperMessageUnread() {
+      return this.getUnreadDeveloperMessages().length > 0;
+    }
     openDeveloperMessage() {
-      const message = this.remoteConfig.developerMessage;
-      if (!message || !this.isDeveloperMessageUnread()) return !1;
+      const message = this.getUnreadDeveloperMessages()[0];
+      if (!message) return !1;
       if (this.developerMessagePanel) {
         this.developerMessagePanel.querySelector(".pset-math-developer-message-close")?.focus();
         return !0;
@@ -17393,6 +17423,11 @@ import {
       const header = R("div", "pset-math-developer-message-header");
       const headerLogo = R("img", "pset-math-developer-message-header-logo");
       const headerLabel = R("strong", "pset-math-developer-message-header-label", "Notification");
+      const progress = R(
+        "span",
+        "pset-math-developer-message-progress",
+        this.getDeveloperMessagePosition(message),
+      );
       const close = Be("×", "pset-math-developer-message-close", "Dismiss developer message");
       const title = R("h2", "pset-math-developer-message-title", message.title);
       const text = R("p", "pset-math-developer-message-text", message.text);
@@ -17402,7 +17437,7 @@ import {
       headerLogo.src = getExtensionUrl("icons/psetter-px-logo-white.svg");
       headerLogo.alt = "P^x";
       signature.hidden = !message.signature;
-      header.append(headerLogo, headerLabel, close);
+      header.append(headerLogo, headerLabel, progress, close);
       panel.append(header, title, text, signature);
       const dismissMessage = () => this.dismissDeveloperMessage();
       close.addEventListener("click", dismissMessage);
@@ -17413,16 +17448,20 @@ import {
         }
       });
       this.developerMessagePanel = panel;
+      this.developerMessageProgress = progress;
       (document.body ?? document.documentElement).appendChild(panel);
       close.focus();
       return !0;
     }
     async dismissDeveloperMessage() {
-      const message = this.remoteConfig.developerMessage;
+      const message = this.getUnreadDeveloperMessages()[0];
       if (!message || !PSETTER_REMOTE_API?.dismissDeveloperMessage) return !1;
       const saved = await PSETTER_REMOTE_API.dismissDeveloperMessage(message.id);
       if (!saved) return !1;
       this.developerMessageReadId = message.id;
+      this.developerMessageReadIds = [
+        ...new Set([...this.getDeveloperMessageReadIds(), message.id]),
+      ];
       this.closeDeveloperMessage();
       this.renderDeveloperMessage();
       return !0;
@@ -17430,12 +17469,24 @@ import {
     closeDeveloperMessage() {
       this.developerMessagePanel?.remove();
       this.developerMessagePanel = void 0;
+      this.developerMessageProgress = void 0;
     }
     renderDeveloperMessage() {
       if (!this.developerMessageButton) return;
-      const unread = this.isDeveloperMessageUnread();
+      const unreadMessages = this.getUnreadDeveloperMessages();
+      const message = unreadMessages[0];
+      const unread = Boolean(message);
       this.developerMessageButton.hidden = !unread;
       this.developerMessageButton.setAttribute("aria-hidden", unread ? "false" : "true");
+      const label =
+        unreadMessages.length > 1
+          ? `Open notifications (${unreadMessages.length} queued)`
+          : "Open developer message";
+      this.developerMessageButton.title = label;
+      this.developerMessageButton.setAttribute("aria-label", label);
+      if (this.developerMessageProgress && message) {
+        this.developerMessageProgress.textContent = this.getDeveloperMessagePosition(message);
+      }
       if (!unread) this.closeDeveloperMessage();
     }
     async openFeedback() {
@@ -17498,11 +17549,25 @@ import {
         this.dispose(!1);
         return;
       }
-      [this.settings, this.remoteConfig, this.developerMessageReadId] = await Promise.all([
+      [
+        this.settings,
+        this.remoteConfig,
+        this.developerMessageReadId,
+        this.developerMessageReadIds,
+      ] = await Promise.all([
         _i(),
         PSETTER_REMOTE_API?.loadCached?.() ?? Promise.resolve(this.remoteConfig),
         PSETTER_REMOTE_API?.readDeveloperMessageReadId?.() ?? Promise.resolve(null),
+        PSETTER_REMOTE_API?.readDeveloperMessageReadIds?.() ?? Promise.resolve([]),
       ]);
+      this.developerMessageReadIds = [
+        ...new Set([
+          ...(Array.isArray(this.developerMessageReadIds)
+            ? this.developerMessageReadIds
+            : []),
+          this.developerMessageReadId,
+        ].filter(Boolean)),
+      ];
       if (this.disposed || !this.isRuntimeOwner()) {
         this.dispose();
         return;
@@ -17518,14 +17583,24 @@ import {
       try {
         const storage = getExtensionApi()?.storage;
         const readKey = PSETTER_REMOTE_API?.developerMessageReadKey;
+        const readIdsKey = PSETTER_REMOTE_API?.developerMessageReadIdsKey;
         const remoteConfigKey = PSETTER_REMOTE_API?.remoteConfigKey;
-        if (storage?.onChanged && readKey) {
+        if (storage?.onChanged && (readKey || readIdsKey)) {
           const onChanged = (changes, areaName) => {
-            if (areaName !== "local" || !changes[readKey]) return;
-            this.developerMessageReadId =
-              PSETTER_REMOTE_API?.normalizeDeveloperMessageReadId?.(
-                changes[readKey].newValue,
-              ) ?? null;
+            if (areaName !== "local") return;
+            if (readKey && changes[readKey]) {
+              this.developerMessageReadId =
+                PSETTER_REMOTE_API?.normalizeDeveloperMessageReadId?.(
+                  changes[readKey].newValue,
+                ) ?? null;
+            }
+            if (readIdsKey && changes[readIdsKey]) {
+              this.developerMessageReadIds =
+                PSETTER_REMOTE_API?.normalizeDeveloperMessageReadIds?.(
+                  changes[readIdsKey].newValue,
+                ) ?? [];
+            }
+            if (!changes[readKey] && !changes[readIdsKey]) return;
             this.renderDeveloperMessage();
           };
           storage.onChanged.addListener(onChanged);

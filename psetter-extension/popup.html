@@ -39,7 +39,7 @@
 
       <section id="developerMessageNotice" class="developer-message-notice" aria-live="polite" hidden>
         <div class="developer-message-notice-copy">
-          <span class="developer-message-eyebrow">New from Psetter</span>
+          <span id="developerMessageQueue" class="developer-message-eyebrow">New from Psetter</span>
           <strong id="developerMessageTeaser"></strong>
         </div>
         <button id="developerMessageOpen" class="developer-message-open" type="button">Read</button>
@@ -49,6 +49,7 @@
         <header class="developer-message-header">
           <img class="developer-message-header-logo" src="icons/psetter-px-logo-white.svg" alt="P^x" />
           <strong class="developer-message-header-label">Notification</strong>
+          <span id="developerMessageProgress" class="developer-message-progress" aria-live="polite"></span>
           <button id="developerMessageClose" class="developer-message-close" type="button" aria-label="Dismiss developer message">×</button>
         </header>
         <h2 id="developerMessageTitle"></h2>

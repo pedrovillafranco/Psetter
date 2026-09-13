@@ -276,6 +276,14 @@ p {
   line-height: 1.25;
   text-align: left;
 }
+.developer-message-progress {
+  flex: 0 0 auto;
+  color: rgb(255 255 255 / 82%);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
 .developer-message-header-logo {
   display: block;
   flex: 0 0 auto;
