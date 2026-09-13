@@ -310,6 +310,51 @@ test("question aliases containing operator names remain editable in native answe
   }
 });
 
+test("elevator answer variables remain editable after native MITx hydration", async () => {
+  const prompt = `<p>Two blocks have masses <span role="math" aria-label="m_1"></span> and <span role="math" aria-label="m_2"></span>.</p>
+    <p>The elevator accelerates with magnitude <span role="math" aria-label="a"></span>. Use <span role="math" aria-label="g"></span> in your answer.</p>
+    <p>Give the answer in terms of <span role="math" aria-label="m_1"></span>, <span role="math" aria-label="m_2"></span>, <span role="math" aria-label="a"></span>, and <span role="math" aria-label="g"></span>.</p>`;
+  const { dom, window } = await createRuntime(
+    `<div class="problems-wrapper">
+      ${problem("elevator", prompt)}
+      ${problem("elevator_native", prompt, "m(a-m_2)")}
+    </div>`,
+  );
+  try {
+    const input = window.document.querySelector("#input_elevator");
+    const controller = window.__psetterRuntime.controllers.get(input);
+    controller.activate();
+    assert.ok(controller.mathField, "native answer is editable");
+    assert.deepEqual(
+      ["m_1", "m_2", "a", "g"].map((name) => controller.semanticContext.items.some((item) => item.outputName === name)),
+      [true, true, true, true],
+      "question variables are available to the editor",
+    );
+    assert.equal(controller.lastResult.status, "safe", "empty hydration is safe");
+    controller.mathField.latex("m(a-m_2)");
+    assert.equal(controller.lastResult.status, "safe", "implicit multiplication is safe");
+    assert.equal(input.value, "m*(a-m_2)", "single-letter variable is written as MITx multiplication");
+
+    const nativeInput = window.document.querySelector("#input_elevator_native");
+    const nativeController = window.__psetterRuntime.controllers.get(nativeInput);
+    nativeController.activate();
+    assert.ok(nativeController.mathField, "existing native answer is editable");
+    assert.equal(nativeInput.value, "m(a-m_2)", "native hydration is non-mutating");
+    nativeController.mathField.moveToRightEnd();
+    nativeController.typeCharacter("+");
+    nativeController.typeCharacter("1");
+    assert.equal(nativeController.lastResult.status, "safe", "edited native answer remains safe");
+    assert.equal(
+      nativeInput.value,
+      "m(a-m_2)+1",
+      "editing an existing native function call still writes back to MITx",
+    );
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
 test("each context semantic class keeps its identity through MathQuill and MITx output", async () => {
   const prompt = `<p>Find <span role="math" aria-label="sin(x)+alpha+v_0+G"></span>
     in terms of <code>pi</code> and <code>e</code>.</p>`;

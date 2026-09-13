@@ -14309,6 +14309,13 @@ import {
             t.allowedFunctions?.has(o)
           )
             return Ee(o, p, t);
+          // In ordinary mathematical notation a single-letter symbol next
+          // to parentheses is implicit multiplication (`m(a + b)`), not an
+          // arbitrary function call. MathQuill represents both forms as an
+          // invisible operator, so preserve the common variable case while
+          // keeping unknown multi-letter calls fail-closed.
+          if (/^[A-Za-z]$/.test(r[0]))
+            return { text: `${o}*${L(q(p[0], t), v.multiply)}`, precedence: v.multiply };
           t.unsafe.push(`${r[0]} is an unsupported parser operation.`);
           return Ee(o, p, t);
         }
