@@ -205,6 +205,49 @@ test("context insertion preserves function and alias semantics", async () => {
   }
 });
 
+test("question aliases containing operator names remain editable in native answers", async () => {
+  const cases = [
+    [
+      "second_definition",
+      '<p>Express the answer in terms of <code>Deltanu</code> for <span role="math" aria-label="Delta nu CS"></span>.</p>',
+      "9192631770/(Deltanu)",
+    ],
+    [
+      "meter_definition",
+      '<p>Express the answer in terms of <code>c</code>, <code>Deltanu</code> for <span role="math" aria-label="Delta nu CS"></span>.</p>',
+      "(c/299792458)*(9192631770/(Deltanu))",
+    ],
+  ];
+  const { dom, window } = await createRuntime(
+    cases.map(([id, prompt, value]) => problem(id, prompt, value)).join(""),
+  );
+  try {
+    for (const [id, , original] of cases) {
+      const input = window.document.querySelector(`#input_${id}`);
+      const controller = window.__psetterRuntime.controllers.get(input);
+      controller.activate();
+      assert.ok(controller.mathField, `${id}: native answer is editable`);
+      assert.ok(controller.semanticContext.aliases.has("Deltanu"), `${id}: alias discovered`);
+      assert.doesNotMatch(controller.mathField.latex(), /\\tan/, `${id}: alias stays atomic`);
+      assert.equal(controller.lastResult.status, "safe", `${id}: hydration is safe`);
+      assert.equal(input.value, original, `${id}: hydration is non-mutating`);
+
+      controller.mathField.moveToRightEnd();
+      controller.typeCharacter("+");
+      controller.typeCharacter("1");
+      assert.equal(controller.lastResult.status, "safe", `${id}: edit remains safe`);
+      assert.equal(
+        controller.nativeEquivalentForQa(`${original}+1`),
+        true,
+        `${id}: edit preserves native semantics; actual ${input.value}`,
+      );
+    }
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
 test("each context semantic class keeps its identity through MathQuill and MITx output", async () => {
   const prompt = `<p>Find <span role="math" aria-label="sin(x)+alpha+v_0+G"></span>
     in terms of <code>pi</code> and <code>e</code>.</p>`;

@@ -14314,7 +14314,17 @@ import {
         }
       }
       return {
-        text: r.map((l) => L(q(l, t), v.multiply)).join("*"),
+        text: r
+          .map((l, o) => {
+            let a = q(l, t);
+            // Division is left-associative in MITx syntax. A right-hand
+            // quotient therefore needs grouping to preserve the native AST:
+            // a*(b/c) must not become a*b/c during hydration verification.
+            return o > 0 && Ft(l) === "Divide"
+              ? `(${a.text})`
+              : L(a, v.multiply);
+          })
+          .join("*"),
         precedence: v.multiply,
       };
     }
@@ -14444,6 +14454,36 @@ import {
     );
   }
   var psetterContextFunctionNames = PSETTER_FUNCTION_NAMES;
+  // MathQuill's built-in operator dictionary is intentionally broader than
+  // Psetter's function set. Keep that dictionary for ordinary editing, but
+  // do not let an operator name split a question-defined multi-letter alias
+  // such as Deltanu into `Del` + `tan` + `u`.
+  var psetterMathQuillDefaultOperatorNames = [
+    "arg", "deg", "det", "dim", "exp", "gcd", "hom", "inf", "ker",
+    "lg", "lim", "ln", "log", "max", "min", "sup", "limsup", "liminf",
+    "injlim", "projlim", "Pr", "sin", "cos", "tan", "arcsin", "arccos",
+    "arctan", "sinh", "cosh", "tanh", "sec", "csc", "cot", "coth",
+    "cosec", "cotan", "ctg", "gcf", "hcf", "lcm", "proj", "span",
+  ];
+  function psetterMathQuillOperatorNames(e) {
+    let aliases = e?.aliases instanceof Set ? e.aliases : new Set();
+    let operatorNames = [
+      ...new Set([
+        ...psetterMathQuillDefaultOperatorNames,
+        ...PSETTER_FUNCTION_NAMES,
+      ]),
+    ].filter((name) => /^[A-Za-z]{2,}$/.test(name));
+    return operatorNames
+      .filter(
+        (operatorName) =>
+          ![...aliases].some(
+            (alias) =>
+              typeof alias === "string" &&
+              alias.toLowerCase().includes(operatorName.toLowerCase()),
+          ),
+      )
+      .join(" ");
+  }
   var psetterNativeAnswerSelector = [
     '.formulaequationinput input[type="text"]',
     '.text-input-dynamath input[type="text"]',
@@ -16235,6 +16275,7 @@ import {
             "sqrt",
             "sum",
           ].join(" "),
+          autoOperatorNames: psetterMathQuillOperatorNames(this.semanticContext),
           handlers: {
             edit: () => {
               if (this.hydratingEditor || !this.isCurrent()) return;
