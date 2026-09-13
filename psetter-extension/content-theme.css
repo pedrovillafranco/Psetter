@@ -1,7 +1,10 @@
 /* Shared design tokens and font. Keep this file before component styles. */
 @font-face {
   font-family: "Inter";
-  src: url("vendor/font/InterVariable.woff2") format("woff2");
+  /* Chromium content CSS needs the extension-origin URL; Firefox keeps the relative fallback. */
+  src:
+    url("chrome-extension://__MSG_@@extension_id__/vendor/font/InterVariable.woff2") format("woff2"),
+    url("vendor/font/InterVariable.woff2") format("woff2");
   font-style: normal;
   font-weight: 100 900;
   font-display: swap;

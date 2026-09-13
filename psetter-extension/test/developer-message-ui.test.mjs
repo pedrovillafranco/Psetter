@@ -6,11 +6,12 @@ import { JSDOM } from "jsdom";
 const extensionDir = new URL("../", import.meta.url);
 
 test("developer message surfaces are local, text-only, and dismissible", async () => {
-  const [popup, popupScript, runtime, styles] = await Promise.all([
+  const [popup, popupScript, runtime, styles, theme] = await Promise.all([
     readFile(new URL("popup.html", extensionDir), "utf8"),
     readFile(new URL("popup.js", extensionDir), "utf8"),
     readFile(new URL("src/content-runtime.js", extensionDir), "utf8"),
     readFile(new URL("content.css", extensionDir), "utf8"),
+    readFile(new URL("content-theme.css", extensionDir), "utf8"),
   ]);
 
   assert.match(popup, /id="developerMessageNotice"/);
@@ -28,6 +29,8 @@ test("developer message surfaces are local, text-only, and dismissible", async (
   assert.doesNotMatch(runtime, /developerMessage.*innerHTML/s);
   assert.match(styles, /\.pset-math-developer-message-panel/);
   assert.match(styles, /\.pset-math-developer-message-button/);
+  assert.match(theme, /chrome-extension:\/\/__MSG_@@extension_id__\/vendor\/font\/InterVariable\.woff2/);
+  assert.match(theme, /url\("vendor\/font\/InterVariable\.woff2"\)/);
 });
 
 test("popup queues two notifications through the existing read and dismiss controls", async () => {
