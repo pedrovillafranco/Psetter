@@ -1,6 +1,7 @@
 import { inflateRawSync } from "node:zlib";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
+import { assertBrowserTarget } from "./browser-target.mjs";
 
 // These are deliberately narrow: broad URL or API-pattern checks would make
 // legitimate future community functionality impossible to add.
@@ -114,7 +115,27 @@ export async function assertPublicZip(zipPath, label = "community ZIP") {
   }
 }
 
-export async function assertStoreZip(zipPath, label = "Store ZIP") {
+function assertManifestTarget(manifest, browser, label) {
+  if (browser === "firefox") {
+    if (
+      manifest.background?.scripts?.[0] !== "background.js" ||
+      manifest.background?.service_worker
+    ) {
+      throw new Error(`${label} Firefox manifest must use background.scripts.`);
+    }
+    if (
+      manifest.minimum_chrome_version ||
+      manifest.browser_specific_settings?.gecko?.id !== "psetter@villafran.co"
+    ) {
+      throw new Error(`${label} Firefox manifest has invalid browser-specific settings.`);
+    }
+  } else if (manifest.background?.service_worker !== "background.js" || manifest.background?.scripts) {
+    throw new Error(`${label} Chrome manifest must use a background service worker.`);
+  }
+}
+
+export async function assertStoreZip(zipPath, label = "Store ZIP", browser = "chrome") {
+  assertBrowserTarget(browser);
   const bytes = await readFile(zipPath);
   const entries = readZipEntries(bytes);
   const byName = new Map(entries.map((entry) => [entry.name, entry.content]));
@@ -123,6 +144,7 @@ export async function assertStoreZip(zipPath, label = "Store ZIP") {
   }
 
   const manifest = JSON.parse(byName.get("manifest.json").toString("utf8"));
+  assertManifestTarget(manifest, browser, label);
   const runtimeConfig = byName.get("runtime-config.js").toString("utf8");
   const originMatch = runtimeConfig.match(/\bfeedbackPageOrigin\s*:\s*["'](https:\/\/[^"']+)["']/u);
   if (!originMatch) throw new Error(`${label} runtime configuration has no HTTPS feedback origin.`);

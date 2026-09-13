@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import test from "node:test";
 import { assertStoreZip } from "../scripts/check-boundary.mjs";
+import { artifactFileName } from "../scripts/release-provenance.mjs";
 import { loadStoreOverlay } from "../scripts/store-overlay.mjs";
 
 const extensionDir = fileURLToPath(new URL("../", import.meta.url));
@@ -51,22 +52,25 @@ test("Store overlay validation and packaging are explicit and isolated", async (
     const overlay = await loadStoreOverlay(overlayDir);
     assert.equal(overlay.feedbackOrigin, "https://store.example.invalid");
 
-    const result = spawnSync(
-      process.execPath,
-      [packageScript, "--channel", "store", "--store-overlay", overlayDir],
-      { cwd: extensionDir, encoding: "utf8" },
-    );
-    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-    const artifact = path.join(rootDir, "dist", `psetter-v${version}-store.zip`);
-    await assertStoreZip(artifact, "Store ZIP");
-    const content = await readFile(path.join(rootDir, "dist", "psetter-store", "content.js"), "utf8");
-    const embeddedConfig = content.match(
-      /globalThis\.__psetterConfig\s*=\s*Object\.freeze\(\{([\s\S]*?)\}\)/u,
-    );
-    assert.ok(embeddedConfig, "Store content should embed runtime configuration");
-    assert.match(embeddedConfig[1], /feedbackEnabled:!0/);
-    assert.match(embeddedConfig[1], /feedbackHostPath:"feedback-host\.html"/);
-    assert.match(content, /https:\/\/store\.example\.invalid/);
+    for (const browser of ["chrome", "firefox"]) {
+      const result = spawnSync(
+        process.execPath,
+        [packageScript, "--channel", "store", "--browser", browser, "--store-overlay", overlayDir],
+        { cwd: extensionDir, encoding: "utf8" },
+      );
+      assert.equal(result.status, 0, `${browser}: ${result.stdout}\n${result.stderr}`);
+      const artifact = path.join(rootDir, "dist", artifactFileName(version, "store", browser));
+      await assertStoreZip(artifact, `Store ${browser} ZIP`, browser);
+      const packageName = browser === "chrome" ? "psetter-store" : `psetter-${browser}-store`;
+      const content = await readFile(path.join(rootDir, "dist", packageName, "content.js"), "utf8");
+      const embeddedConfig = content.match(
+        /globalThis\.__psetterConfig\s*=\s*Object\.freeze\(\{([\s\S]*?)\}\)/u,
+      );
+      assert.ok(embeddedConfig, "Store content should embed runtime configuration");
+      assert.match(embeddedConfig[1], /feedbackEnabled:!0/);
+      assert.match(embeddedConfig[1], /feedbackHostPath:"feedback-host\.html"/);
+      assert.match(content, /https:\/\/store\.example\.invalid/);
+    }
 
     const wrongChannel = spawnSync(
       process.execPath,

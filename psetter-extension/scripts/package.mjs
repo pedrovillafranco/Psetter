@@ -5,6 +5,7 @@ import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { assertPublicZip, assertPublicTree, assertStoreZip } from "./check-boundary.mjs";
+import { parseBrowserTarget, renderManifest } from "./browser-target.mjs";
 import { artifactFileName, parseReleaseChannel, readArgument } from "./release-provenance.mjs";
 import { loadStoreOverlay } from "./store-overlay.mjs";
 
@@ -14,6 +15,7 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const extensionDir = path.resolve(scriptDir, "..");
 const rootDir = path.resolve(extensionDir, "..");
 const isDev = process.argv.includes("--dev");
+const browser = parseBrowserTarget(process.argv.slice(2));
 if (isDev && process.argv.includes("--channel")) {
   throw new Error("Development packaging cannot be combined with a release channel.");
 }
@@ -29,11 +31,14 @@ const storeOverlay = releaseChannel === "store" ? await loadStoreOverlay(storeOv
 const buildChannel = isDev ? "dev" : "production";
 const manifestPath = path.join(extensionDir, "manifest.json");
 const sourceManifest = JSON.parse(await readFile(manifestPath, "utf8"));
-const packageName = isDev ? "psetter-dev" : `psetter-${releaseChannel}`;
+const targetManifest = renderManifest(sourceManifest, { browser, storeOverlay });
+const packageName = isDev
+  ? (browser === "chrome" ? "psetter-dev" : "psetter-firefox-dev")
+  : (browser === "chrome" ? `psetter-${releaseChannel}` : `psetter-${browser}-${releaseChannel}`);
 const packageDir = path.join(rootDir, "dist", packageName);
 const archive = isDev
   ? null
-  : path.join(rootDir, "dist", artifactFileName(sourceManifest.version, releaseChannel));
+  : path.join(rootDir, "dist", artifactFileName(sourceManifest.version, releaseChannel, browser));
 const fixedZipDate = new Date("1980-01-01T00:00:00.000Z");
 
 const { buildContent } = await import("./build.mjs");
@@ -89,19 +94,8 @@ if (storeOverlay) {
     await writeFile(path.join(packageDir, file), storeOverlay.files[file], "utf8");
   }
   await writeFile(path.join(packageDir, "runtime-config.js"), storeOverlay.files["runtime-config.js"], "utf8");
-  const storeManifest = {
-    ...sourceManifest,
-    host_permissions: [...sourceManifest.host_permissions, `${storeOverlay.feedbackOrigin}/*`],
-    web_accessible_resources: [
-      ...sourceManifest.web_accessible_resources,
-      {
-        resources: ["feedback-host.html"],
-        matches: ["https://*.mitx.mit.edu/*"],
-      },
-    ],
-  };
-  await writeFile(path.join(packageDir, "manifest.json"), `${JSON.stringify(storeManifest, null, 2)}\n`, "utf8");
 }
+await writeFile(path.join(packageDir, "manifest.json"), `${JSON.stringify(targetManifest, null, 2)}\n`, "utf8");
 if (isDev) {
   await cp(path.join(extensionDir, "popup-dev.js"), path.join(packageDir, "popup-dev.js"));
 }
@@ -173,7 +167,7 @@ if (isDev) {
 } else {
   await rm(archive, { force: true });
   await createDeterministicZip(packageDir, archive);
-  if (releaseChannel === "store") await assertStoreZip(archive, "Store ZIP");
+  if (releaseChannel === "store") await assertStoreZip(archive, "Store ZIP", browser);
   else await assertPublicZip(archive, "community ZIP");
   console.log(`Packaged production extension at ${archive}`);
 }

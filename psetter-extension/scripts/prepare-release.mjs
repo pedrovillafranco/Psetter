@@ -2,6 +2,7 @@ import { readFile, readdir, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { parseBrowserTarget } from "./browser-target.mjs";
 import {
   artifactFileName,
   compareBuildIdentity,
@@ -15,13 +16,14 @@ import {
 
 const argv = process.argv.slice(2);
 const channel = parseReleaseChannel(argv);
+const browser = parseBrowserTarget(argv);
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const extensionDir = path.resolve(scriptDir, "..");
 const rootDir = path.resolve(extensionDir, "..");
 const manifest = JSON.parse(await readFile(path.join(extensionDir, "manifest.json"), "utf8"));
 const rootPackage = JSON.parse(await readFile(path.join(rootDir, "package.json"), "utf8"));
 const expectedTag = `v${manifest.version}`;
-const artifact = artifactFileName(manifest.version, channel);
+const artifact = artifactFileName(manifest.version, channel, browser);
 const candidateStatePath =
   readArgument(argv, "--candidate-state") ??
   path.join(rootDir, "dist", `${artifact.replace(/\.zip$/u, "")}.candidate.json`);
@@ -50,7 +52,11 @@ if (!tags.includes(expectedTag)) {
 }
 
 const candidate = validateCandidateState(JSON.parse(await readFile(candidateStatePath, "utf8")));
-if (candidate.build.version !== manifest.version || candidate.build.channel !== channel) {
+if (
+  candidate.build.version !== manifest.version ||
+  candidate.build.channel !== channel ||
+  candidate.build.browser !== browser
+) {
   throw new Error("Candidate build identity does not match the release manifest and channel.");
 }
 if (candidate.build.publicCommit !== commit) {
@@ -76,6 +82,8 @@ for (const arguments_ of [
     path.join(scriptDir, "check-reproducible.mjs"),
     "--channel",
     channel,
+    "--browser",
+    browser,
     ...(storeOverlayPath === null ? [] : ["--store-overlay", storeOverlayPath]),
   ],
 ]) {
@@ -93,6 +101,7 @@ const artifactPath = path.join(rootDir, "dist", artifact);
 const build = createBuildIdentity({
   version: manifest.version,
   channel,
+  browser,
   publicCommit: commit,
   overlayCommit: channel === "store" ? overlayCommit : null,
   artifact,

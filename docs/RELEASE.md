@@ -15,15 +15,17 @@ Git tag and commit
         +--> reproducible build
                   |
                   v
-        psetter-v<version>-community.zip
+        psetter-v<version>-community.zip       (Chrome)
+        psetter-v<version>-firefox-community.zip
+                                                (Firefox)
                   |
                   v
-        community distribution artifact
+        community distribution artifact (Chrome or Firefox)
 ```
 
 The Git tag and commit identify the source state. GitHub-generated source
 archives are source snapshots created by GitHub and are not build inputs or
-Chrome extension packages. The community ZIP is built directly from the
+browser extension packages. The community ZIP is built directly from the
 tagged source and contains no store-hosted feedback or remote-configuration
 infrastructure. The separate store build consumes the existing private
 infrastructure independently.
@@ -38,14 +40,20 @@ From a clean tagged checkout, run:
 pnpm install --frozen-lockfile
 pnpm extension:check
 pnpm extension:reproducible:community
+pnpm extension:reproducible:firefox
 ```
 
-The reproducibility check builds the community package twice and compares the
-SHA-256 digests. The resulting file is:
+Each reproducibility check builds its browser-specific community package twice
+and compares the SHA-256 digests. The resulting files are:
 
 ```text
 dist/psetter-v<version>-community.zip
+dist/psetter-v<version>-firefox-community.zip
 ```
+
+Store builds use the same browser target commands with a reviewed private
+overlay supplied through `--store-overlay`; the overlay is never committed to
+this repository.
 
 The public source includes the workspace manifests, dependency lockfile,
 extension package metadata, build scripts, authored source, tests, and
@@ -64,6 +72,8 @@ git tag -a v<version> -m "Psetter <version>"
 pnpm release:prepare:community
 ```
 
+Use the `:firefox` command variants to validate and record the Firefox artifact.
+
 The final command requires an explicit channel, the exact version tag on
 `HEAD`, and a clean worktree. It runs syntax and manifest checks, the complete
 test suite, and the reproducibility check. It then independently recomputes
@@ -71,10 +81,11 @@ the build identity and fails if the final artifact differs from the
 smoke-tested candidate. The release record is written to:
 
 ```text
-dist/psetter-v<version>-community.release.json
+dist/psetter-v<version>-community.release.json       # Chrome
+dist/psetter-v<version>-firefox-community.release.json
 ```
 
-The record separates build identity (version, channel, public commit, artifact,
+The record separates build identity (version, channel, browser, public commit, artifact,
 SHA-256, and deterministic packaging inputs) from runtime attestation. Store
 records additionally require the private overlay commit and runtime fields for
 the Worker deployment and remote configuration observed during smoke testing.

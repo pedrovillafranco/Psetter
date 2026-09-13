@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { parseBrowserTarget } from "./browser-target.mjs";
 import { artifactFileName, parseReleaseChannel, readArgument, sha256File } from "./release-provenance.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -9,6 +10,7 @@ const extensionDir = path.resolve(scriptDir, "..");
 const rootDir = path.resolve(extensionDir, "..");
 const argv = process.argv.slice(2);
 const channel = parseReleaseChannel(argv);
+const browser = parseBrowserTarget(argv);
 const storeOverlayPath = readArgument(argv, "--store-overlay");
 if (channel === "store" && storeOverlayPath === null) {
   throw new Error("Store reproducibility requires --store-overlay.");
@@ -17,10 +19,10 @@ if (channel !== "store" && storeOverlayPath !== null) {
   throw new Error("A Store overlay may only be used for Store reproducibility.");
 }
 const manifest = JSON.parse(await readFile(path.join(extensionDir, "manifest.json"), "utf8"));
-const artifact = path.join(rootDir, "dist", artifactFileName(manifest.version, channel));
+const artifact = path.join(rootDir, "dist", artifactFileName(manifest.version, channel, browser));
 
 function packageExtension() {
-  const packageArgs = [path.join(scriptDir, "package.mjs"), "--channel", channel];
+  const packageArgs = [path.join(scriptDir, "package.mjs"), "--channel", channel, "--browser", browser];
   if (storeOverlayPath !== null) packageArgs.push("--store-overlay", storeOverlayPath);
   const result = spawnSync(process.execPath, packageArgs, {
     cwd: extensionDir,

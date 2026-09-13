@@ -16,6 +16,7 @@ import {
   validateCandidateState,
   validateRuntimeAttestation,
 } from "../scripts/release-provenance.mjs";
+import { parseBrowserTarget } from "../scripts/browser-target.mjs";
 
 const extensionDir = fileURLToPath(new URL("../", import.meta.url));
 const fullCommit = "a".repeat(40);
@@ -23,13 +24,14 @@ const overlayCommit = "b".repeat(40);
 const hash = "c".repeat(64);
 const lockfileHash = "d".repeat(64);
 
-function build(channel = "community") {
+function build(channel = "community", browser = "chrome") {
   return createBuildIdentity({
     version: "0.1.1",
     channel,
+    browser,
     publicCommit: fullCommit,
     overlayCommit: channel === "store" ? overlayCommit : null,
-    artifact: artifactFileName("0.1.1", channel),
+    artifact: artifactFileName("0.1.1", channel, browser),
     sha256: hash,
     lockfileSha256: lockfileHash,
     nodeVersion: "v22.0.0",
@@ -41,6 +43,7 @@ function rebuild(base, overrides = {}) {
   return createBuildIdentity({
     version: base.version,
     channel: base.channel,
+    browser: base.browser,
     publicCommit: base.publicCommit,
     overlayCommit: base.overlayCommit,
     artifact: base.artifact,
@@ -56,10 +59,34 @@ test("release channels are explicit and artifact names are disjoint", () => {
   assert.throws(() => parseReleaseChannel([]), /explicit release channel/);
   assert.equal(parseReleaseChannel(["--channel", "community"]), "community");
   assert.equal(parseReleaseChannel(["--channel", "store"]), "store");
+  assert.equal(parseBrowserTarget([]), "chrome");
+  assert.equal(parseBrowserTarget(["--browser", "firefox"]), "firefox");
+  assert.throws(() => parseBrowserTarget(["--browser", "safari"]));
   assert.throws(() => parseReleaseChannel(["--channel", "community", "--channel", "store"]));
+  assert.equal(artifactFileName("0.1.1", "community"), "psetter-v0.1.1-community.zip");
+  assert.equal(
+    artifactFileName("0.1.1", "community", "firefox"),
+    "psetter-v0.1.1-firefox-community.zip",
+  );
   assert.notEqual(artifactFileName("0.1.1", "community"), artifactFileName("0.1.1", "store"));
+  assert.notEqual(
+    artifactFileName("0.1.1", "community", "chrome"),
+    artifactFileName("0.1.1", "community", "firefox"),
+  );
   assert.notEqual(candidateStateFileName("0.1.1", "community"), candidateStateFileName("0.1.1", "store"));
   assert.notEqual(releaseRecordFileName("0.1.1", "community"), releaseRecordFileName("0.1.1", "store"));
+});
+
+test("browser identities reject cross-browser artifacts", () => {
+  const chrome = build("community", "chrome");
+  const firefox = build("community", "firefox");
+  assert.equal(chrome.browser, "chrome");
+  assert.equal(firefox.browser, "firefox");
+  assert.deepEqual(compareBuildIdentity(chrome, firefox), ["browser", "artifact"]);
+  assert.throws(
+    () => rebuild(chrome, { artifact: artifactFileName("0.1.1", "community", "firefox") }),
+    /Artifact must be named/,
+  );
 });
 
 test("channel identities reject cross-channel artifacts and overlay provenance", () => {

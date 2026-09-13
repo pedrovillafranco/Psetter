@@ -1,6 +1,6 @@
 # Psetter™
 
-Psetter is a Chrome extension for MITx that adds a visual math editor directly
+Psetter is a browser extension for MITx that adds a visual math editor directly
 to compatible answer fields. Instead of translating mathematical expressions
 into MITx syntax by hand, you can build them visually and let Psetter convert
 them into the input format MITx expects.
@@ -31,7 +31,7 @@ to reproduce and inspect the extension.
 
 - Parsing and math conversion run locally. Answer content is never sent to a
   Psetter server.
-- Settings and aggregate usage counts are stored locally with Chrome storage.
+- Settings and aggregate usage counts are stored locally with extension storage.
 - An optional, size-limited JSON configuration provides only predefined
   feature flags, compatibility and maintenance messages, minimum-version
   warnings, and emergency disable flags.
@@ -52,11 +52,16 @@ Requirements: Node.js 22 or later and pnpm 11.
 pnpm install --frozen-lockfile
 pnpm extension:check
 pnpm extension:package:dev
+# For Firefox instead:
+pnpm extension:package:dev:firefox
 ```
 
-Then open `chrome://extensions`, enable Developer mode, choose **Load unpacked**,
-and select `dist/psetter-dev`. This build is named **Psetter Dev** and uses a
-purple development treatment so it is easy to distinguish from production.
+Then open `chrome://extensions` in Chrome/Edge or `about:debugging` in Firefox,
+enable Developer mode, and choose **Load unpacked** (or **Load Temporary
+Add-on** in Firefox). Select `dist/psetter-dev` in Chrome/Edge; in Firefox,
+select `dist/psetter-firefox-dev/manifest.json`. This build is named **Psetter Dev**
+and uses a purple development treatment so it is easy to distinguish from
+production.
 
 To test the complete local editor without an MITx account, open the toolbar
 popup, expand Settings, and select **Try Psetter locally**. The packaged demo
@@ -74,9 +79,25 @@ reload the unpacked extension after changes.
 pnpm install --frozen-lockfile
 pnpm extension:check
 pnpm extension:reproducible:community
+pnpm extension:reproducible:firefox
 ```
 
-The community archive is written to `dist/psetter-v<version>-community.zip`.
+The community channel is the public-source build. Chrome and Firefox artifacts
+are written to `dist/psetter-v<version>-community.zip` and
+`dist/psetter-v<version>-firefox-community.zip`, respectively. Store artifacts
+use the same browser targets and require the reviewed private overlay, supplied
+explicitly with `--store-overlay`.
+
+For example, from a checkout beside the private `psetter-infra` repository:
+
+```sh
+pnpm extension:package:store -- --store-overlay ../../psetter-infra/store-overlay
+pnpm extension:package:store:firefox -- --store-overlay ../../psetter-infra/store-overlay
+```
+
+The unpacked Store directories use one name per target: `dist/psetter-store`
+for Chrome/Edge and `dist/psetter-firefox-store` for Firefox.
+
 The ZIP is created from an explicit allowlist with stable file ordering,
 timestamps, and permissions. The reproducibility check builds it twice and
 compares SHA-256 digests. Store packaging is a separate channel and currently
@@ -88,6 +109,7 @@ an explicit channel, and an exact `v<manifest-version>` tag on `HEAD`:
 ```sh
 pnpm release:candidate:community
 pnpm release:prepare:community
+# Firefox variants append :firefox to each command.
 ```
 
 The candidate command writes an ignored, generated attestation under `dist/`.
@@ -96,6 +118,10 @@ identity and SHA-256 match that candidate. It writes a release record but does
 not publish or upload anything. Bare `release:prepare` is intentionally invalid;
 choose `:community` or `:store` explicitly. See [`docs/RELEASE.md`](docs/RELEASE.md)
 for the public build and release provenance procedure.
+
+The public repository is versioned source, not a rolling Store-build mirror:
+Store validation can happen locally with the private overlay without
+committing generated artifacts or private infrastructure files.
 
 ## Repository layout
 

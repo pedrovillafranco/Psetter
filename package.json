@@ -1,6 +1,6 @@
 {
   "name": "psetter",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "packageManager": "pnpm@11.19.0",
   "scripts": {
@@ -8,16 +8,26 @@
     "extension:build": "pnpm --filter @psetter/extension build",
     "extension:package": "pnpm --filter @psetter/extension package:community",
     "extension:package:community": "pnpm --filter @psetter/extension package:community",
+    "extension:package:firefox": "pnpm --filter @psetter/extension package:firefox",
     "extension:package:store": "pnpm --filter @psetter/extension package:store",
+    "extension:package:store:firefox": "pnpm --filter @psetter/extension package:store:firefox",
     "extension:package:dev": "pnpm --filter @psetter/extension package:dev",
+    "extension:package:dev:firefox": "pnpm --filter @psetter/extension package:dev:firefox",
     "extension:reproducible": "pnpm --filter @psetter/extension check:reproducible",
     "extension:reproducible:community": "pnpm --filter @psetter/extension check:reproducible:community",
+    "extension:reproducible:firefox": "pnpm --filter @psetter/extension check:reproducible:firefox",
     "extension:reproducible:store": "pnpm --filter @psetter/extension check:reproducible:store",
+    "extension:reproducible:store:firefox": "pnpm --filter @psetter/extension check:reproducible:store:firefox",
     "release:candidate:community": "pnpm --filter @psetter/extension release:candidate:community",
+    "release:candidate:community:firefox": "pnpm --filter @psetter/extension release:candidate:community:firefox",
     "release:candidate:store": "pnpm --filter @psetter/extension release:candidate:store",
+    "release:candidate:store:firefox": "pnpm --filter @psetter/extension release:candidate:store:firefox",
     "release:prepare": "pnpm --filter @psetter/extension release:prepare",
     "release:prepare:community": "pnpm --filter @psetter/extension release:prepare:community",
+    "release:prepare:community:firefox": "pnpm --filter @psetter/extension release:prepare:community:firefox",
     "release:prepare:store": "pnpm --filter @psetter/extension release:prepare:store",
-    "release:attest:store": "pnpm --filter @psetter/extension release:attest:store"
+    "release:prepare:store:firefox": "pnpm --filter @psetter/extension release:prepare:store:firefox",
+    "release:attest:store": "pnpm --filter @psetter/extension release:attest:store",
+    "release:attest:store:firefox": "pnpm --filter @psetter/extension release:attest:store:firefox"
   }
 }

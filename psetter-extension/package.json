@@ -1,6 +1,6 @@
 {
   "name": "@psetter/extension",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,17 +8,27 @@
     "build": "node scripts/build.mjs",
     "package": "node scripts/package.mjs --channel community",
     "package:community": "node scripts/package.mjs --channel community",
+    "package:firefox": "node scripts/package.mjs --channel community --browser firefox",
     "package:store": "node scripts/package.mjs --channel store",
+    "package:store:firefox": "node scripts/package.mjs --channel store --browser firefox",
     "package:dev": "node scripts/package.mjs --dev",
+    "package:dev:firefox": "node scripts/package.mjs --dev --browser firefox",
     "check:reproducible": "node scripts/check-reproducible.mjs --channel community",
     "check:reproducible:community": "node scripts/check-reproducible.mjs --channel community",
+    "check:reproducible:firefox": "node scripts/check-reproducible.mjs --channel community --browser firefox",
     "check:reproducible:store": "node scripts/check-reproducible.mjs --channel store",
+    "check:reproducible:store:firefox": "node scripts/check-reproducible.mjs --channel store --browser firefox",
     "release:candidate:community": "node scripts/prepare-candidate.mjs --channel community",
+    "release:candidate:community:firefox": "node scripts/prepare-candidate.mjs --channel community --browser firefox",
     "release:candidate:store": "node scripts/prepare-candidate.mjs --channel store",
+    "release:candidate:store:firefox": "node scripts/prepare-candidate.mjs --channel store --browser firefox",
     "release:prepare": "node scripts/prepare-release.mjs",
     "release:prepare:community": "node scripts/prepare-release.mjs --channel community",
+    "release:prepare:community:firefox": "node scripts/prepare-release.mjs --channel community --browser firefox",
     "release:prepare:store": "node scripts/prepare-release.mjs --channel store",
-    "release:attest:store": "node scripts/attest-candidate.mjs --channel store"
+    "release:prepare:store:firefox": "node scripts/prepare-release.mjs --channel store --browser firefox",
+    "release:attest:store": "node scripts/attest-candidate.mjs --channel store",
+    "release:attest:store:firefox": "node scripts/attest-candidate.mjs --channel store --browser firefox"
   },
   "devDependencies": {
     "esbuild": "^0.28.1",

@@ -9,6 +9,7 @@ const rootDir = path.resolve(extensionDir, "..", "..");
 
 const checks = [
   ["semantic model", path.join(extensionDir, "..", "src", "semantic-model.js")],
+  ["browser target", path.join(extensionDir, "browser-target.mjs")],
   ["release provenance", path.join(extensionDir, "release-provenance.mjs")],
   ["candidate preparation", path.join(extensionDir, "prepare-candidate.mjs")],
   ["candidate attestation", path.join(extensionDir, "attest-candidate.mjs")],

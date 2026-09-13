@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { assertBrowserTarget } from "./browser-target.mjs";
 
 export const RELEASE_SCHEMA_VERSION = 1;
 export const CANDIDATE_ATTESTATION_VERSION = 1;
@@ -13,6 +14,7 @@ const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z
 const BUILD_KEYS = new Set([
   "version",
   "channel",
+  "browser",
   "publicCommit",
   "overlayCommit",
   "artifact",
@@ -99,18 +101,20 @@ export function readArgument(argv, name, { required = false } = {}) {
   return values[0] ?? null;
 }
 
-export function artifactFileName(version, channel) {
+export function artifactFileName(version, channel, browser = "chrome") {
   assertVersion(version, "Artifact version");
   assertReleaseChannel(channel);
-  return `psetter-v${version}-${channel}.zip`;
+  assertBrowserTarget(browser);
+  const targetSuffix = browser === "chrome" ? channel : `${browser}-${channel}`;
+  return `psetter-v${version}-${targetSuffix}.zip`;
 }
 
-export function candidateStateFileName(version, channel) {
-  return `${artifactFileName(version, channel).replace(/\.zip$/u, "")}.candidate.json`;
+export function candidateStateFileName(version, channel, browser = "chrome") {
+  return `${artifactFileName(version, channel, browser).replace(/\.zip$/u, "")}.candidate.json`;
 }
 
-export function releaseRecordFileName(version, channel) {
-  return `${artifactFileName(version, channel).replace(/\.zip$/u, "")}.release.json`;
+export function releaseRecordFileName(version, channel, browser = "chrome") {
+  return `${artifactFileName(version, channel, browser).replace(/\.zip$/u, "")}.release.json`;
 }
 
 export async function sha256File(filePath) {
@@ -120,6 +124,7 @@ export async function sha256File(filePath) {
 export function createBuildIdentity({
   version,
   channel,
+  browser = "chrome",
   publicCommit,
   overlayCommit,
   artifact,
@@ -130,6 +135,7 @@ export function createBuildIdentity({
 }) {
   assertVersion(version, "Build version");
   assertReleaseChannel(channel);
+  assertBrowserTarget(browser);
   assertCommit(publicCommit, "Public commit");
   if (channel === "store") assertCommit(overlayCommit, "Store overlay commit");
   else if (overlayCommit !== null) throw new Error("Community builds cannot have an overlay commit.");
@@ -141,13 +147,14 @@ export function createBuildIdentity({
   if (typeof packageManager !== "string" || !/^pnpm@\d+\.\d+\.\d+$/.test(packageManager)) {
     throw new Error("Package manager version is invalid.");
   }
-  const expectedArtifact = artifactFileName(version, channel);
+  const expectedArtifact = artifactFileName(version, channel, browser);
   if (artifact !== expectedArtifact) {
     throw new Error(`Artifact must be named ${expectedArtifact}.`);
   }
   return {
     version,
     channel,
+    browser,
     publicCommit,
     overlayCommit,
     artifact,
@@ -162,6 +169,7 @@ export function validateBuildIdentity(value) {
   return createBuildIdentity({
     version: value.version,
     channel: value.channel,
+    browser: value.browser,
     publicCommit: value.publicCommit,
     overlayCommit: value.overlayCommit,
     artifact: value.artifact,
@@ -176,7 +184,7 @@ export function compareBuildIdentity(expected, actual) {
   const left = validateBuildIdentity(expected);
   const right = validateBuildIdentity(actual);
   const mismatches = [];
-  for (const field of ["version", "channel", "publicCommit", "overlayCommit", "artifact", "sha256"]) {
+  for (const field of ["version", "channel", "browser", "publicCommit", "overlayCommit", "artifact", "sha256"]) {
     if (left[field] !== right[field]) mismatches.push(field);
   }
   for (const field of ["lockfileSha256", "nodeVersion", "packageManager"]) {

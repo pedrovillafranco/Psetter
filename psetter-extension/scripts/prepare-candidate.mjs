@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { parseBrowserTarget } from "./browser-target.mjs";
 import {
   artifactFileName,
   assertCommit,
@@ -14,6 +15,7 @@ import {
 
 const argv = process.argv.slice(2);
 const channel = parseReleaseChannel(argv);
+const browser = parseBrowserTarget(argv);
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const extensionDir = path.resolve(scriptDir, "..");
 const rootDir = path.resolve(extensionDir, "..");
@@ -45,18 +47,21 @@ const reproducible = spawnSync(
     path.join(scriptDir, "check-reproducible.mjs"),
     "--channel",
     channel,
+    "--browser",
+    browser,
     ...(storeOverlayPath === null ? [] : ["--store-overlay", storeOverlayPath]),
   ],
   { cwd: extensionDir, stdio: "inherit" },
 );
 if (reproducible.status !== 0) process.exit(reproducible.status ?? 1);
 
-const artifact = artifactFileName(manifest.version, channel);
+const artifact = artifactFileName(manifest.version, channel, browser);
 const artifactPath = path.join(rootDir, "dist", artifact);
 const lockfileSha256 = await sha256File(path.join(rootDir, "pnpm-lock.yaml"));
 const build = createBuildIdentity({
   version: manifest.version,
   channel,
+  browser,
   publicCommit,
   overlayCommit,
   artifact,

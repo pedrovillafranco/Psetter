@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.3
+
+- Added explicit Chrome and Firefox build targets with disjoint package,
+  candidate-attestation, and release-record names.
+- Store packaging now renders the target-specific manifest in one place,
+  preserving the private overlay permissions and web-accessible feedback host
+  for both browser targets.
+- Store ZIP validation now checks the target-specific background configuration,
+  while build provenance and reproducibility checks include the browser target
+  so artifacts cannot be crossed or misidentified.
+
 ## 0.1.2
 
 - Fixed Store packaging so the feedback and remote-configuration overlay is

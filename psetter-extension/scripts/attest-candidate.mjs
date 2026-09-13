@@ -2,6 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { parseBrowserTarget } from "./browser-target.mjs";
 import {
   assertCommit,
   assertSha256,
@@ -13,6 +14,7 @@ import {
 
 const argv = process.argv.slice(2);
 const channel = parseReleaseChannel(argv);
+const browser = parseBrowserTarget(argv);
 if (channel !== "store") throw new Error("Runtime attestation is only required for Store candidates.");
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const extensionDir = path.resolve(scriptDir, "..");
@@ -21,11 +23,15 @@ const manifest = JSON.parse(await readFile(path.join(extensionDir, "manifest.jso
 const defaultStatePath = path.join(
   rootDir,
   "dist",
-  `${artifactFileName(manifest.version, channel).replace(/\.zip$/u, "")}.candidate.json`,
+  `${artifactFileName(manifest.version, channel, browser).replace(/\.zip$/u, "")}.candidate.json`,
 );
 const statePath = readArgument(argv, "--candidate-state") ?? defaultStatePath;
 const state = validateCandidateState(JSON.parse(await readFile(statePath, "utf8")));
-if (state.build.channel !== channel || state.build.version !== manifest.version) {
+if (
+  state.build.channel !== channel ||
+  state.build.browser !== browser ||
+  state.build.version !== manifest.version
+) {
   throw new Error("Candidate state channel or version does not match the current manifest.");
 }
 
