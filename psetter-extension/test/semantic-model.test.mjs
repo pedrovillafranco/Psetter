@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   PSETTER_FUNCTION_NAMES,
+  PSETTER_VECTOR_ALIAS_NAMES,
   canonicalizePsetterQuestionSymbol,
   classifyPsetterIdentifier,
   createPsetterContextItem,
@@ -187,6 +188,10 @@ test("constants, Greek names, aliases, variables, and subscripts remain distinct
   assert.equal(classifyPsetterIdentifier("x+y", { explicitAlias: true }), null);
 });
 
+test("physics vector aliases are part of the stable editor vocabulary", () => {
+  assert.deepEqual([...PSETTER_VECTOR_ALIAS_NAMES], ["hati", "hatj", "hatk"]);
+});
+
 test("math extraction classifies calls without turning operators into terms", () => {
   const items = extractPsetterMathIdentifiers(
     String.raw`\arctan(v_0)+\sin(\theta)+log10(x)+G*M`,
@@ -240,6 +245,27 @@ test("structured TeX and styled Unicode preserve symbol identity", () => {
   assert.equal(semantics.get("E"), "variable");
   assert.equal(semantics.get("y"), "variable");
   assert.equal(semantics.get("zeta"), "greek");
+});
+
+test("hatted physics basis vectors retain MITx answer aliases", () => {
+  for (const [source, expectedRaw] of [
+    [String.raw`\hat{i}+\hat{\jmath}+\hat{k}`, ["hati", "hatj", "hatk"]],
+    [String.raw`\hat{\mathbf{i}}+\hat{\mathrm{j}}+\hat{\boldsymbol{k}}`, ["hati", "hatj", "hatk"]],
+    ["ModifyingAbove i With caret + j-hat + hat k", ["hati", "hatj", "hatk"]],
+    [
+      '<math><mover><mi>i</mi><mo>^</mo></mover>+<mover><mi>j</mi><mo>^</mo></mover>+<mover><mi>k</mi><mo>^</mo></mover></math>',
+      ["hati", "hatj", "hatk"],
+    ],
+  ]) {
+    const items = extractPsetterMathIdentifiers(source);
+    assert.deepEqual(items.map((item) => item.outputName), expectedRaw, source);
+    assert.deepEqual(items.map((item) => item.semanticKind), ["alias", "alias", "alias"], source);
+    assert.deepEqual(items.map((item) => item.normalization), [
+      "tex-vector-hat",
+      "tex-vector-hat",
+      "tex-vector-hat",
+    ], source);
+  }
 });
 
 test("generated identifier classes normalize typography without joining invisible text", () => {

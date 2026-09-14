@@ -214,6 +214,56 @@ test("context insertion preserves function and alias semantics", async () => {
   }
 });
 
+test("hatted physics basis vectors serialize as hati, hatj, and hatk", async () => {
+  const prompt = String.raw`<p>Use the unit vectors <span role="math" aria-label="\hat{i}+\hat{\jmath}+\hat{k}"></span> in your answer.</p>`;
+  const { dom, window } = await createRuntime(problem("basis_vectors", prompt));
+  try {
+    const controller = window.__psetterRuntime.controllers.get(
+      window.document.querySelector("#input_basis_vectors"),
+    );
+    controller.activate();
+    const aliases = new Map(
+      controller.semanticContext.items
+        .filter((item) => ["hati", "hatj", "hatk"].includes(item.outputName))
+        .map((item) => [item.outputName, item]),
+    );
+    assert.deepEqual([...aliases.keys()], ["hati", "hatj", "hatk"]);
+    for (const name of aliases.keys()) {
+      controller.clearExpression();
+      controller.insertSymbol(aliases.get(name));
+      assert.equal(controller.input.value, name, name);
+      assert.equal(controller.lastResult.status, "safe", name);
+    }
+    controller.mathField.latex("3*hati-2*hatj+6*hatk");
+    assert.equal(controller.input.value, "3*hati-2*hatj+6*hatk");
+    assert.equal(controller.lastResult.status, "safe");
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("manual vector-alias typing stays contiguous", async () => {
+  const { dom, window } = await createRuntime(problem("manual_basis_aliases", "<p>Enter a vector expression.</p>"));
+  try {
+    const input = window.document.querySelector("#input_manual_basis_aliases");
+    const controller = window.__psetterRuntime.controllers.get(input);
+    controller.activate();
+    for (const alias of ["hati", "hatj", "hatk"]) {
+      controller.clearExpression();
+      for (const character of alias) controller.typeCharacter(character);
+      assert.equal(input.value, alias, alias);
+      assert.equal(controller.lastResult.status, "safe", alias);
+    }
+    controller.clearExpression();
+    controller.mathField.latex("h*a*t*i");
+    assert.equal(input.value, "h*a*t*i", "explicit multiplication is not rewritten as an alias");
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
 test("queued developer messages use one page panel and advance after dismissal", async () => {
   const first = {
     id: "notice-1",

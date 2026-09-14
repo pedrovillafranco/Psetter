@@ -1,6 +1,7 @@
 import {
   PSETTER_FUNCTION_NAMES,
   PSETTER_GREEK_LATEX,
+  PSETTER_VECTOR_ALIAS_NAMES,
   createPsetterContextItem,
   dedupePsetterContextItems,
   extractPsetterMathIdentifiers,
@@ -14515,7 +14516,10 @@ import {
   function restorePsetterMultiLetterSymbols(e, t, n) {
     if (typeof e != "string" || typeof t != "string" || !t) return t;
     let i = t,
-      r = n instanceof Set ? n : new Set();
+      r = new Set([
+        ...PSETTER_VECTOR_ALIAS_NAMES,
+        ...(n instanceof Set ? n : []),
+      ]);
     for (let s of r) {
       if (
         typeof s != "string" ||

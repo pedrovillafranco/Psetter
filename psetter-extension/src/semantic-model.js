@@ -81,6 +81,7 @@ export const PSETTER_FUNCTIONS = new Map(
   FUNCTION_ROWS.map(([name, latex]) => [name, { name, latex, semanticKind: "function" }]),
 );
 export const PSETTER_FUNCTION_NAMES = new Set(PSETTER_FUNCTIONS.keys());
+export const PSETTER_VECTOR_ALIAS_NAMES = new Set(["hati", "hatj", "hatk"]);
 export const PSETTER_GREEK = new Map(
   GREEK_ROWS.map(([name, glyph, latex]) => [name, { name, glyph, latex, semanticKind: "greek" }]),
 );
@@ -129,6 +130,28 @@ const STYLED_GREEK_VARIANTS = new Map([
 function splitSubscript(identifier) {
   const match = identifier.match(/^([A-Za-z][A-Za-z0-9]*)(?:_([A-Za-z0-9]+))?$/);
   return match ? { base: match[1], subscript: match[2] ?? "" } : null;
+}
+
+const HAT_TEX_PATTERN =
+  /\\hat\s*\{\s*(?:(?:\\(?:mathbf|mathrm|mathit|boldsymbol)\s*\{\s*)?(\\imath|\\jmath|[ijk])\s*\}?\s*\})/gi;
+const HAT_MATHML_PATTERN =
+  /<mover\b[^>]*>\s*<(?:mi|mo)\b[^>]*>\s*(\\?imath|\\?jmath|[ijkıȷ])\s*<\/(?:mi|mo)>\s*<(?:mo|mi)\b[^>]*>\s*(?:\^|ˆ|⌢|&Hat;)\s*<\/(?:mo|mi)>\s*<\/mover>/gi;
+const HAT_SPOKEN_PATTERN =
+  /\b(?:(?:modifying|modified)\s*above\s+([ijk])\s+with\s+(?:a\s+)?(?:hat|caret)|([ijk])\s*[- ]\s*hat|hat(?:ted)?\s*[- ]\s*([ijk]))\b/gi;
+const HAT_ALIAS_PATTERN = /\b(hati|hatj|hatk)\b/gi;
+
+function psetterHatVectorBase(value) {
+  const normalized = normalizePsetterMathText(String(value ?? ""))
+    .replace(/^\\/, "")
+    .toLowerCase();
+  return { imath: "i", jmath: "j", i: "i", j: "j", k: "k", "ı": "i", "ȷ": "j" }[
+    normalized
+  ] ?? null;
+}
+
+function psetterHatVectorName(value) {
+  const base = psetterHatVectorBase(value);
+  return base ? `hat${base}` : null;
 }
 
 function escapeOperatorName(value) {
@@ -181,6 +204,17 @@ export function canonicalizePsetterQuestionSymbol(rawRepresentation) {
       : null;
   }
   const normalized = normalizePsetterMathText(raw).trim();
+  const hatVector = normalized.match(/^\\hat\s*\{\s*(\\imath|\\jmath|[ijk])\s*\}$/i);
+  const hatVectorName = hatVector ? psetterHatVectorName(hatVector[1]) : null;
+  if (hatVectorName) {
+    return {
+      rawRepresentation: raw,
+      canonicalName: hatVectorName,
+      canonicalLatex: `\\operatorname{${hatVectorName}}`,
+      semanticHint: "alias",
+      normalization: "tex-vector-hat",
+    };
+  }
   const tex = normalized.match(/^\\([A-Za-z]+)(?:_\{?([A-Za-z0-9₀-₉]+)\}?)?$/);
   if (tex) {
     const command = tex[1];
@@ -410,7 +444,6 @@ export function isPsetterInstructionalText(text) {
 
 export function extractPsetterMathIdentifiers(source) {
   if (typeof source !== "string" || !source.trim()) return [];
-  const normalizedSource = normalizePsetterMathText(source);
   const tokens = [];
   const add = (value, options = {}) => {
     const item = createPsetterContextItem(value, {
@@ -420,7 +453,31 @@ export function extractPsetterMathIdentifiers(source) {
     });
     if (item) tokens.push(item);
   };
-  for (const match of source.matchAll(
+  for (const match of [
+    ...source.matchAll(HAT_TEX_PATTERN),
+    ...source.matchAll(HAT_MATHML_PATTERN),
+    ...source.matchAll(HAT_SPOKEN_PATTERN),
+    ...source.matchAll(HAT_ALIAS_PATTERN),
+  ]) {
+    const alias = /^(?:hati|hatj|hatk)$/i.test(match[0].trim())
+      ? match[1].toLowerCase()
+      : psetterHatVectorName(match[1] ?? match[2] ?? match[3]);
+    if (!alias) continue;
+    add(alias, {
+      declaredKind: "alias",
+      explicitAlias: true,
+      rawRepresentation: match[0],
+      sourceRepresentation: match[0],
+      normalization: "tex-vector-hat",
+    });
+  }
+  const sourceWithoutHattedVectors = source
+    .replace(HAT_TEX_PATTERN, " ")
+    .replace(HAT_MATHML_PATTERN, " ")
+    .replace(HAT_SPOKEN_PATTERN, " ")
+    .replace(HAT_ALIAS_PATTERN, " ");
+  const normalizedSource = normalizePsetterMathText(sourceWithoutHattedVectors);
+  for (const match of sourceWithoutHattedVectors.matchAll(
     /<(?:[A-Za-z][A-Za-z0-9_-]*:)?(?:mi|ci)\b[^>]*>([^<>]+)<\/(?:[A-Za-z][A-Za-z0-9_-]*:)?(?:mi|ci)>/gi,
   )) {
     const canonical = canonicalizePsetterQuestionSymbol(match[1]);
@@ -428,7 +485,7 @@ export function extractPsetterMathIdentifiers(source) {
     const knownFunction = PSETTER_FUNCTION_NAMES.has(
       canonical.canonicalName.toLowerCase(),
     );
-    const tail = source.slice(match.index + match[0].length);
+    const tail = sourceWithoutHattedVectors.slice(match.index + match[0].length);
     const hasMathmlArgument = /^\s*(?:(?:<(?:[A-Za-z][A-Za-z0-9_-]*:)?mo\b[^>]*>\s*(?:⁡|&(?:#x?2061|ApplyFunction);)\s*<\/(?:[A-Za-z][A-Za-z0-9_-]*:)?mo>\s*)?(?:<(?:[A-Za-z][A-Za-z0-9_-]*:)?mfenced\b|<(?:[A-Za-z][A-Za-z0-9_-]*:)?mo\b[^>]*>\s*\(\s*<\/(?:[A-Za-z][A-Za-z0-9_-]*:)?mo>))/i.test(
       tail,
     );
@@ -447,7 +504,7 @@ export function extractPsetterMathIdentifiers(source) {
       normalization: "mathml-token",
     });
   }
-  for (const match of source.matchAll(
+  for (const match of sourceWithoutHattedVectors.matchAll(
     /\\(?:mathrm|mathbf|mathit|mathsf|mathtt|boldsymbol)\s*\{\s*([^{}]+)\s*\}/g,
   )) {
     const canonical = canonicalizePsetterQuestionSymbol(match[0]);
@@ -460,7 +517,7 @@ export function extractPsetterMathIdentifiers(source) {
   // Preserve the source representation for known Unicode mathematical
   // alphabets and Greek glyphs. The normalized scan below then contributes
   // structure without erasing how an authoritative question symbol arrived.
-  for (const match of source.matchAll(/[\p{L}]+(?:[₀-₉]+)?/gu)) {
+  for (const match of sourceWithoutHattedVectors.matchAll(/[\p{L}]+(?:[₀-₉]+)?/gu)) {
     if (/^[\x00-\x7F]+$/.test(match[0])) continue;
     const canonical = canonicalizePsetterQuestionSymbol(match[0]);
     if (!canonical) continue;
@@ -499,6 +556,8 @@ export function extractPsetterMathIdentifiers(source) {
     }
   }
   const normalized = normalizedSource
+    .replace(HAT_TEX_PATTERN, " ")
+    .replace(HAT_MATHML_PATTERN, " ")
     .replace(
       /<(?:[A-Za-z][A-Za-z0-9_-]*:)?(?:mi|ci)\b[^>]*>[^<>]+<\/(?:[A-Za-z][A-Za-z0-9_-]*:)?(?:mi|ci)>/gi,
       " ",
