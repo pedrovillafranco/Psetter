@@ -1,7 +1,5 @@
-import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
-import { readdir, readFile } from "node:fs/promises";
-import { spawnSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import test from "node:test";
@@ -9,26 +7,6 @@ import test from "node:test";
 const extensionDir = new URL("../", import.meta.url);
 const extensionPath = fileURLToPath(extensionDir);
 const rootPath = path.resolve(extensionPath, "..");
-
-async function snapshotRepositoryFiles(directory, prefix = "") {
-  const result = new Map();
-  const entries = await readdir(directory, { withFileTypes: true });
-  for (const entry of entries) {
-    if (entry.isDirectory() && [".git", "dist", "node_modules"].includes(entry.name)) {
-      continue;
-    }
-    const absolutePath = path.join(directory, entry.name);
-    const relativePath = path.posix.join(prefix, entry.name);
-    if (entry.isDirectory()) {
-      const nested = await snapshotRepositoryFiles(absolutePath, relativePath);
-      for (const [file, hash] of nested) result.set(file, hash);
-    } else if (entry.isFile()) {
-      const content = await readFile(absolutePath);
-      result.set(relativePath, createHash("sha256").update(content).digest("hex"));
-    }
-  }
-  return result;
-}
 
 test("settings stay local and page messaging does not broadcast extension state", async () => {
   const [popup, runtime] = await Promise.all([
@@ -68,17 +46,16 @@ test("the generated production content bundle excludes QA snapshot code", async 
   );
 });
 
-test("the development package does not modify repository files", async () => {
-  const before = await snapshotRepositoryFiles(rootPath);
-  const result = spawnSync(
-    process.execPath,
-    [path.join(extensionPath, "scripts", "package.mjs"), "--dev"],
-    { cwd: extensionPath, encoding: "utf8" },
-  );
+test("the release surface has only public and Store packages", async () => {
+  const [rootPackage, extensionPackage, packageScript] = await Promise.all([
+    readFile(path.join(rootPath, "package.json"), "utf8"),
+    readFile(path.join(extensionPath, "package.json"), "utf8"),
+    readFile(new URL("scripts/package.mjs", extensionDir), "utf8"),
+  ]);
 
-  assert.equal(result.status, 0, result.stderr || result.stdout);
-  const after = await snapshotRepositoryFiles(rootPath);
-  assert.deepEqual(after, before);
+  assert.doesNotMatch(rootPackage, /package:dev/);
+  assert.doesNotMatch(extensionPackage, /package:dev/);
+  assert.doesNotMatch(packageScript, /--dev|Psetter Dev|psetter-dev|popup-dev/);
 });
 
 test("release preparation runs every test before reproducibility verification", async () => {

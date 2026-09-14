@@ -21,7 +21,6 @@
             <h1>Psetter&trade;</h1>
             <p>by Pedro Villafranco</p>
           </div>
-          <span id="buildBadge" class="build-badge" hidden>DEV</span>
         </a>
         <div class="header-toggle">
           <span id="enabledLabel">Off</span>
@@ -78,29 +77,6 @@
 
       <details class="settings">
         <summary>Settings</summary>
-        <!-- PSETTER_DEV_START -->
-        <div class="developer-settings" data-developer-settings>
-          <p class="settings-subheading">Developer</p>
-          <label class="switch-row compact">
-            <span>
-              <strong>Show QA Tools</strong>
-            </span>
-            <span class="switch-control" aria-label="Show QA tools">
-              <input id="devMode" type="checkbox" />
-              <span aria-hidden="true"></span>
-            </span>
-          </label>
-          <div id="devPanel" class="settings-panel" hidden>
-            <div class="settings-actions">
-              <button id="startCapture" type="button">Start Capture</button>
-              <button id="stopCapture" type="button">Stop Capture</button>
-              <button id="runScriptedQa" type="button">Run Scripted QA</button>
-              <button id="exportQaLog" type="button">Export Log</button>
-            </div>
-            <p id="devStatus" class="dev-status" aria-live="polite"></p>
-          </div>
-        </div>
-        <!-- PSETTER_DEV_END -->
         <p class="settings-subheading">Usage</p>
         <button id="resetUsage" class="reset-usage" type="button">
           Reset usage stats
@@ -126,8 +102,5 @@
     <script src="runtime-config.js"></script>
     <script src="remote-config.js"></script>
     <script src="popup.js"></script>
-    <!-- PSETTER_DEV_SCRIPT_START -->
-    <script src="popup-dev.js"></script>
-    <!-- PSETTER_DEV_SCRIPT_END -->
   </body>
 </html>

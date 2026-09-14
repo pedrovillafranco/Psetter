@@ -124,35 +124,48 @@ test("accepts bounded developer message text and rejects executable-shaped field
   );
 });
 
-test("accepts up to two queued developer messages while preserving the first-message compatibility view", () => {
+test("accepts multiple queued developer messages while preserving the first-message compatibility view", () => {
   const { developerMessage, ...withoutLegacyMessage } = validConfig;
-  const first = { ...developerMessage, id: "notice-1", title: "First notice" };
-  const second = { ...developerMessage, id: "notice-2", title: "Second notice" };
+  const messages = Array.from({ length: 5 }, (_, index) => ({
+    ...developerMessage,
+    id: `notice-${index + 1}`,
+    title: `Notice ${index + 1}`,
+  }));
   const normalized = api.validate({
     ...withoutLegacyMessage,
-    developerMessages: [first, second],
+    developerMessages: messages,
   });
-  assert.deepEqual(normalized.developerMessages, [first, second]);
-  assert.deepEqual(normalized.developerMessage, first);
+  assert.deepEqual(normalized.developerMessages, messages);
+  assert.deepEqual(normalized.developerMessage, messages[0]);
   assert.equal(
     api.validate({
       ...withoutLegacyMessage,
-      developerMessages: [first, second, { ...second, id: "notice-3" }],
-    }),
-    null,
-  );
-  assert.equal(
-    api.validate({
-      ...withoutLegacyMessage,
-      developerMessages: [first, { ...second, id: first.id }],
+      developerMessages: [messages[0], { ...messages[1], id: messages[0].id }],
     }),
     null,
   );
   assert.equal(
     api.validate({
       ...validConfig,
-      developerMessages: [first, second],
+      developerMessages: messages,
     }),
+    null,
+  );
+});
+
+test("accepts the v0.1.3 schema version for the isolated Store endpoint", () => {
+  const { developerMessage, ...withoutLegacyMessage } = validConfig;
+  const config = {
+    ...withoutLegacyMessage,
+    schemaVersion: 2,
+    developerMessages: [developerMessage],
+  };
+  assert.deepEqual(api.validate(config), {
+    ...config,
+    developerMessage,
+  });
+  assert.equal(
+    api.validate({ ...validConfig, schemaVersion: 2 }),
     null,
   );
 });

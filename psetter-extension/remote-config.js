@@ -8,13 +8,15 @@
   const CACHE_TTL_MS = Number.isFinite(CONFIG.remoteConfigTtlMs)
     ? Math.max(60_000, Math.min(CONFIG.remoteConfigTtlMs, 60 * 60 * 1000))
     : 5 * 60 * 1000;
-  const MAX_RESPONSE_BYTES = 4096;
+  // Keep the response bounded for safe remote-config loading, but do not
+  // impose a separate notification-count limit. The message field limits and
+  // this payload bound together provide the practical safety boundary.
+  const MAX_RESPONSE_BYTES = 32 * 1024;
   const MESSAGE_MAX_LENGTH = 240;
   const DEVELOPER_MESSAGE_ID_MAX_LENGTH = 80;
   const DEVELOPER_MESSAGE_TITLE_MAX_LENGTH = 120;
   const DEVELOPER_MESSAGE_TEXT_MAX_LENGTH = 1000;
   const DEVELOPER_MESSAGE_SIGNATURE_MAX_LENGTH = 120;
-  const DEVELOPER_MESSAGE_MAX_COUNT = 2;
   const DEVELOPER_MESSAGE_READ_IDS_MAX_COUNT = 100;
   const DEVELOPER_MESSAGE_READ_KEY =
     CONFIG.developerMessageReadKey ?? "psetterDeveloperMessageReadId";
@@ -107,7 +109,7 @@
   }
 
   function validateDeveloperMessages(value) {
-    if (!Array.isArray(value) || value.length > DEVELOPER_MESSAGE_MAX_COUNT) return null;
+    if (!Array.isArray(value)) return null;
     const messages = value.map(validateDeveloperMessage);
     if (messages.some((message) => message === null)) return null;
     const ids = new Set(messages.map((message) => message.id));
@@ -131,7 +133,8 @@
       "developerMessages",
       "features",
     ]);
-    if (!hasOnlyKeys(value, allowedTopLevel) || value.schemaVersion !== 1) return null;
+    const schemaVersion = value.schemaVersion;
+    if (!hasOnlyKeys(value, allowedTopLevel) || ![1, 2].includes(schemaVersion)) return null;
     if (typeof value.disabled !== "boolean" || typeof value.feedbackDisabled !== "boolean") {
       return null;
     }
@@ -139,6 +142,7 @@
     if (!isNullableMessage(value.compatibilityWarning)) return null;
     if (!isNullableMessage(value.maintenanceMessage)) return null;
     const hasDeveloperMessages = Object.prototype.hasOwnProperty.call(value, "developerMessages");
+    if (schemaVersion === 2 && !hasDeveloperMessages) return null;
     let developerMessage;
     let developerMessages;
     if (hasDeveloperMessages) {
@@ -167,7 +171,7 @@
       return null;
     }
     const normalized = {
-      schemaVersion: 1,
+      schemaVersion,
       disabled: value.disabled,
       feedbackDisabled: value.feedbackDisabled,
       minimumSupportedVersion: value.minimumSupportedVersion,

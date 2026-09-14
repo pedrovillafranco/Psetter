@@ -38,9 +38,12 @@ function validateRuntimeConfig(source, location) {
   if (readConfigString(source, "buildChannel") !== "__PSETTER_BUILD_CHANNEL__") {
     throw new Error("Store runtime configuration must contain the build-channel placeholder.");
   }
+  if (readConfigString(source, "remoteConfigKey") !== "psetterRemoteConfigV2") {
+    throw new Error("Store runtime configuration must use the v0.1.3 remote-config cache key.");
+  }
   const remoteConfigUrl = assertHttpsUrl(readConfigString(source, "remoteConfigUrl"), "remoteConfigUrl");
-  if (remoteConfigUrl.pathname !== "/config/v1.json") {
-    throw new Error("remoteConfigUrl must point to /config/v1.json.");
+  if (remoteConfigUrl.pathname !== "/config/v2.json") {
+    throw new Error("remoteConfigUrl must point to /config/v2.json.");
   }
   const feedbackPageUrl = assertHttpsUrl(readConfigString(source, "feedbackPageUrl"), "feedbackPageUrl");
   if (feedbackPageUrl.pathname !== "/feedback") {

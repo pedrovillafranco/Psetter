@@ -51,17 +51,15 @@ Requirements: Node.js 22 or later and pnpm 11.
 ```sh
 pnpm install --frozen-lockfile
 pnpm extension:check
-pnpm extension:package:dev
-# For Firefox instead:
-pnpm extension:package:dev:firefox
+pnpm extension:package
 ```
 
-Then open `chrome://extensions` in Chrome/Edge or `about:debugging` in Firefox,
-enable Developer mode, and choose **Load unpacked** (or **Load Temporary
-Add-on** in Firefox). Select `dist/psetter-dev` in Chrome/Edge; in Firefox,
-select `dist/psetter-firefox-dev/manifest.json`. This build is named **Psetter Dev**
-and uses a purple development treatment so it is easy to distinguish from
-production.
+The normal local package is the full Store build. It requires the private
+`psetter-infra` checkout beside this repository and writes `dist/psetter-store`
+for Chrome/Edge. Open `chrome://extensions`, enable Developer mode, choose
+**Load unpacked**, and select that directory. The Firefox Store variant is
+written to `dist/psetter-firefox-store` and can be loaded from
+`about:debugging` as a temporary add-on.
 
 To test the complete local editor without an MITx account, open the toolbar
 popup, expand Settings, and select **Try Psetter locally**. The packaged demo
@@ -70,8 +68,8 @@ It does not broaden automatic page access beyond the MITx hosts declared in the
 manifest.
 
 Edit `psetter-extension/src/content-runtime.js`, not the generated
-`psetter-extension/content.js`. Re-run the development packaging command and
-reload the unpacked extension after changes.
+`psetter-extension/content.js`. Re-run `pnpm extension:package` and reload the
+unpacked Store extension after changes.
 
 ## Production build
 
@@ -88,11 +86,12 @@ are written to `dist/psetter-v<version>-community.zip` and
 use the same browser targets and require the reviewed private overlay, supplied
 explicitly with `--store-overlay`.
 
-For example, from a checkout beside the private `psetter-infra` repository:
+The normal local package command uses the private overlay automatically when
+the checkout is beside the private `psetter-infra` repository:
 
 ```sh
-pnpm extension:package:store -- --store-overlay ../../psetter-infra/store-overlay
-pnpm extension:package:store:firefox -- --store-overlay ../../psetter-infra/store-overlay
+pnpm extension:package
+pnpm extension:package:store:firefox
 ```
 
 The unpacked Store directories use one name per target: `dist/psetter-store`
@@ -100,8 +99,9 @@ for Chrome/Edge and `dist/psetter-firefox-store` for Firefox.
 
 The ZIP is created from an explicit allowlist with stable file ordering,
 timestamps, and permissions. The reproducibility check builds it twice and
-compares SHA-256 digests. Store packaging is a separate channel and currently
-fails closed until its reviewed Store overlay is supplied.
+compares SHA-256 digests. The public-safe package remains available explicitly
+through `pnpm extension:package:community` and does not contain Store
+infrastructure.
 
 Final community release preparation additionally requires a clean Git worktree,
 an explicit channel, and an exact `v<manifest-version>` tag on `HEAD`:

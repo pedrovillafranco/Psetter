@@ -63,32 +63,6 @@ textarea {
   color: inherit;
   text-decoration: none;
 }
-.build-badge {
-  align-self: flex-start;
-  margin: 2px 0 0 -5px;
-  padding: 3px 5px;
-  border: 1px solid currentColor;
-  border-radius: 999px;
-  color: #fff;
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: 0.09em;
-}
-.is-dev-build {
-  --psetter-accent: #6d28d9;
-  --psetter-accent-deep: #5b21b6;
-  --psetter-accent-soft: rgb(109 40 217 / 9%);
-}
-.is-dev-build .brand::after {
-  position: absolute;
-  inset: 0 0 auto;
-  height: 3px;
-  background: #fbbf24;
-  content: "";
-}
-.is-dev-build .brand {
-  position: relative;
-}
 .brand-link:hover,
 .brand-link:focus-visible {
   color: inherit;
@@ -625,37 +599,6 @@ select {
 }
 .settings-panel {
   padding: 2px 0 8px;
-}
-.settings-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-.settings-actions button {
-  border: 1px solid var(--psetter-border-strong);
-  border-radius: 8px;
-  padding: 8px 10px;
-  background: var(--psetter-surface);
-  color: var(--psetter-accent-deep);
-  font: 600 12px/1.2 Inter, Arial, sans-serif;
-  cursor: pointer;
-}
-.settings-actions button:hover {
-  border-color: var(--psetter-accent);
-  background: var(--psetter-accent-soft);
-}
-.dev-status {
-  min-height: 18px;
-  margin: 10px 0 0;
-  color: var(--psetter-accent);
-  font-size: 11px;
-  line-height: 1.35;
-}
-.dev-hint {
-  margin: 6px 0 0;
-  color: var(--psetter-text-muted);
-  font-size: 10.5px;
-  line-height: 1.4;
 }
 footer {
   display: flex;

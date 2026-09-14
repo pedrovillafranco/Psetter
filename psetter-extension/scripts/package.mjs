@@ -14,31 +14,20 @@ const yazl = require("yazl");
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const extensionDir = path.resolve(scriptDir, "..");
 const rootDir = path.resolve(extensionDir, "..");
-const isDev = process.argv.includes("--dev");
 const browser = parseBrowserTarget(process.argv.slice(2));
-if (isDev && process.argv.includes("--channel")) {
-  throw new Error("Development packaging cannot be combined with a release channel.");
-}
-const releaseChannel = isDev ? null : parseReleaseChannel(process.argv.slice(2));
+const releaseChannel = parseReleaseChannel(process.argv.slice(2));
 const storeOverlayPath = readArgument(process.argv.slice(2), "--store-overlay");
-if (isDev && storeOverlayPath !== null) {
-  throw new Error("Development packaging cannot consume a Store overlay.");
-}
 if (releaseChannel !== "store" && storeOverlayPath !== null) {
   throw new Error("A Store overlay may only be used with --channel store.");
 }
 const storeOverlay = releaseChannel === "store" ? await loadStoreOverlay(storeOverlayPath) : null;
-const buildChannel = isDev ? "dev" : "production";
+const buildChannel = "production";
 const manifestPath = path.join(extensionDir, "manifest.json");
 const sourceManifest = JSON.parse(await readFile(manifestPath, "utf8"));
 const targetManifest = renderManifest(sourceManifest, { browser, storeOverlay });
-const packageName = isDev
-  ? (browser === "chrome" ? "psetter-dev" : "psetter-firefox-dev")
-  : (browser === "chrome" ? `psetter-${releaseChannel}` : `psetter-${browser}-${releaseChannel}`);
+const packageName = browser === "chrome" ? `psetter-${releaseChannel}` : `psetter-${browser}-${releaseChannel}`;
 const packageDir = path.join(rootDir, "dist", packageName);
-const archive = isDev
-  ? null
-  : path.join(rootDir, "dist", artifactFileName(sourceManifest.version, releaseChannel, browser));
+const archive = path.join(rootDir, "dist", artifactFileName(sourceManifest.version, releaseChannel, browser));
 const fixedZipDate = new Date("1980-01-01T00:00:00.000Z");
 
 const { buildContent } = await import("./build.mjs");
@@ -47,15 +36,13 @@ const builtContentPath = await buildContent({
   runtimeConfigPath: storeOverlay ? path.join(storeOverlay.directory, "runtime-config.js") : null,
   outputPath: storeOverlay ? path.join(rootDir, "dist", ".build", "content-store.js") : null,
 });
-if (!isDev) {
-  const productionContent = await readFile(builtContentPath, "utf8");
-  if (
-    /getQaSnapshot|page_url|raw_latex|visible_psetter_text|PsetterQaHarness|qaTests|qaWait/.test(
-      productionContent,
-    )
-  ) {
-    throw new Error("Production content bundle contains development-only QA snapshot code.");
-  }
+const productionContent = await readFile(builtContentPath, "utf8");
+if (
+  /getQaSnapshot|page_url|raw_latex|visible_psetter_text|PsetterQaHarness|qaTests|qaWait/.test(
+    productionContent,
+  )
+) {
+  throw new Error("Production content bundle contains development-only QA snapshot code.");
 }
 await rm(packageDir, { recursive: true, force: true });
 await mkdir(packageDir, { recursive: true });
@@ -96,9 +83,6 @@ if (storeOverlay) {
   await writeFile(path.join(packageDir, "runtime-config.js"), storeOverlay.files["runtime-config.js"], "utf8");
 }
 await writeFile(path.join(packageDir, "manifest.json"), `${JSON.stringify(targetManifest, null, 2)}\n`, "utf8");
-if (isDev) {
-  await cp(path.join(extensionDir, "popup-dev.js"), path.join(packageDir, "popup-dev.js"));
-}
 for (const directory of releaseDirectories) {
   await cp(path.join(extensionDir, directory), path.join(packageDir, directory), {
     recursive: true,
@@ -122,55 +106,18 @@ const popupPath = path.join(packageDir, "popup.html");
 const popupSource = await readFile(popupPath, "utf8");
 const devBlockPattern = /\s*<!-- PSETTER_DEV_START -->[\s\S]*?<!-- PSETTER_DEV_END -->/;
 const devScriptPattern = /\s*<!-- PSETTER_DEV_SCRIPT_START -->[\s\S]*?<!-- PSETTER_DEV_SCRIPT_END -->/;
-if (isDev) {
-  await writeFile(
-    popupPath,
-    popupSource
-      .replaceAll("<!-- PSETTER_DEV_START -->", "")
-      .replaceAll("<!-- PSETTER_DEV_END -->", "")
-      .replaceAll("<!-- PSETTER_DEV_SCRIPT_START -->", "")
-      .replaceAll("<!-- PSETTER_DEV_SCRIPT_END -->", ""),
-    "utf8",
-  );
-} else {
-  if (!devBlockPattern.test(popupSource) || !devScriptPattern.test(popupSource)) {
-    throw new Error("Missing marked development-only popup content");
-  }
-  await writeFile(
-    popupPath,
-    popupSource.replace(devBlockPattern, "").replace(devScriptPattern, ""),
-    "utf8",
-  );
+if (devBlockPattern.test(popupSource) || devScriptPattern.test(popupSource)) {
+  throw new Error("Production popup contains removed development-only markup.");
 }
+await writeFile(popupPath, popupSource, "utf8");
 
 await normalizeTextFiles(packageDir);
 
-if (isDev) {
-  const devManifest = {
-    ...sourceManifest,
-    name: "Psetter Dev",
-    short_name: "Psetter Dev",
-    version_name: `${sourceManifest.version} dev`,
-    description: `[Development build] ${sourceManifest.description}`,
-    action: {
-      ...sourceManifest.action,
-      default_title: "Psetter Dev",
-    },
-  };
-  await writeFile(
-    path.join(packageDir, "manifest.json"),
-    `${JSON.stringify(devManifest, null, 2)}\n`,
-    "utf8",
-  );
-  await rm(path.dirname(builtContentPath), { recursive: true, force: true });
-  console.log(`Built unpacked development extension at ${packageDir}`);
-} else {
-  await rm(archive, { force: true });
-  await createDeterministicZip(packageDir, archive);
-  if (releaseChannel === "store") await assertStoreZip(archive, "Store ZIP", browser);
-  else await assertPublicZip(archive, "community ZIP");
-  console.log(`Packaged production extension at ${archive}`);
-}
+await rm(archive, { force: true });
+await createDeterministicZip(packageDir, archive);
+if (releaseChannel === "store") await assertStoreZip(archive, "Store ZIP", browser);
+else await assertPublicZip(archive, "community ZIP");
+console.log(`Packaged production extension at ${archive}`);
 
 async function normalizeTextFiles(directory) {
   const textExtensions = new Set([".css", ".html", ".js", ".json", ".svg", ".txt"]);

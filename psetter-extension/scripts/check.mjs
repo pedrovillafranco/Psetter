@@ -16,7 +16,6 @@ const checks = [
   ["store overlay", path.join(extensionDir, "store-overlay.mjs")],
   ["content runtime", path.join(extensionDir, "..", "src", "content-runtime.js")],
   ["popup", path.join(extensionDir, "..", "popup.js")],
-  ["development popup", path.join(extensionDir, "..", "popup-dev.js")],
   ["remote config", path.join(extensionDir, "..", "remote-config.js")],
   ["local demo", path.join(extensionDir, "..", "demo.js")],
 ];

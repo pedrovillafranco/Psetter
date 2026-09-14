@@ -4,7 +4,6 @@
   const CONFIG = globalThis.__psetterConfig ?? {};
   const REMOTE_API = globalThis.__psetterRemoteConfig;
   const SETTINGS_KEY = CONFIG.settingsKey ?? "psetMathSettings";
-  const BUILD_CHANNEL = CONFIG.buildChannel ?? "production";
   const USAGE_KEY = CONFIG.usageKey ?? "psetMathUsage";
   const FEEDBACK_PAGE_URL = CONFIG.feedbackPageUrl ?? "";
   const FEEDBACK_PAGE_ORIGIN = CONFIG.feedbackPageOrigin ?? "";
@@ -74,7 +73,6 @@
   const impactRangeOptions = [...document.querySelectorAll(".impact-range-option")];
   const resetUsage = getNode("#resetUsage");
   const openDemo = getNode("#openDemo");
-  const buildBadge = getNode("#buildBadge");
   const remoteNotice = getNode("#remoteNotice");
   const remoteNoticeTitle = getNode("#remoteNoticeTitle");
   const remoteNoticeMessage = getNode("#remoteNoticeMessage");
@@ -156,12 +154,6 @@
     enabled.disabled = remoteConfig.disabled;
     enabledLabel.textContent = remoteConfig.disabled ? "Paused" : settings.enabled ? "On" : "Off";
     brand.classList.toggle("is-enabled", effectiveEnabled);
-  }
-
-  function renderBuildChannel() {
-    const isDev = BUILD_CHANNEL === "dev";
-    document.body.classList.toggle("is-dev-build", isDev);
-    buildBadge.hidden = !isDev;
   }
 
   function renderVersion() {
@@ -488,7 +480,6 @@
     });
   }
 
-  renderBuildChannel();
   renderVersion();
 
   Promise.all([

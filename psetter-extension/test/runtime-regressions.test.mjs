@@ -264,6 +264,45 @@ test("manual vector-alias typing stays contiguous", async () => {
   }
 });
 
+test("MathQuill typed vector aliases stay contiguous in implicit products", async () => {
+  const { dom, window } = await createRuntime(problem("typed_basis_aliases", "<p>Enter a vector expression.</p>"));
+  try {
+    const input = window.document.querySelector("#input_typed_basis_aliases");
+    const controller = window.__psetterRuntime.controllers.get(input);
+    controller.activate();
+    const cases = [
+      ["hati", "hati"],
+      ["2hati", "2*hati"],
+      ["hatihati", "hati*hati"],
+      ["hatj+hatk", "hatj+hatk"],
+    ];
+    for (const [expression, expected] of cases) {
+      controller.clearExpression();
+      for (const character of expression) controller.typeCharacter(character);
+      assert.equal(input.value, expected, expression);
+      assert.equal(controller.lastResult.status, "safe", expression);
+    }
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("the Latin o variable is not serialized as parser Omicron", async () => {
+  const { dom, window } = await createRuntime(problem("latin_o", "<p>Use the variable o.</p>"));
+  try {
+    const input = window.document.querySelector("#input_latin_o");
+    const controller = window.__psetterRuntime.controllers.get(input);
+    controller.activate();
+    controller.typeCharacter("o");
+    assert.equal(input.value, "o");
+    assert.equal(controller.lastResult.status, "safe");
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
 test("queued developer messages use one page panel and advance after dismissal", async () => {
   const first = {
     id: "notice-1",
@@ -277,8 +316,14 @@ test("queued developer messages use one page panel and advance after dismissal",
     text: "Second text",
     signature: "- Pedro",
   };
+  const third = {
+    id: "notice-3",
+    title: "Third notice",
+    text: "Third text",
+    signature: "- Pedro",
+  };
   const { developerMessage: _legacyMessage, ...queuedConfig } = remoteConfig;
-  queuedConfig.developerMessages = [first, second];
+  queuedConfig.developerMessages = [first, second, third];
   const { dom, window } = await createRuntime(
     problem("queued_notifications", "<p>Find x.</p>"),
     { remoteConfig: queuedConfig },
@@ -293,12 +338,12 @@ test("queued developer messages use one page panel and advance after dismissal",
     );
     assert.equal(
       manager.developerMessagePanel.querySelector(".pset-math-developer-message-progress").textContent,
-      "1 of 2",
+      "1 of 3",
     );
 
     assert.equal(await manager.dismissDeveloperMessage(), true);
     assert.equal(manager.developerMessagePanel, undefined);
-    assert.equal(manager.developerMessageButton.hidden, false, "second message remains queued");
+    assert.equal(manager.developerMessageButton.hidden, false, "later messages remain queued");
     assert.equal(manager.openDeveloperMessage(), true);
     assert.equal(
       manager.developerMessagePanel.querySelector(".pset-math-developer-message-title").textContent,
@@ -306,7 +351,19 @@ test("queued developer messages use one page panel and advance after dismissal",
     );
     assert.equal(
       manager.developerMessagePanel.querySelector(".pset-math-developer-message-progress").textContent,
-      "2 of 2",
+      "2 of 3",
+    );
+
+    assert.equal(await manager.dismissDeveloperMessage(), true);
+    assert.equal(manager.developerMessageButton.hidden, false, "third message remains queued");
+    assert.equal(manager.openDeveloperMessage(), true);
+    assert.equal(
+      manager.developerMessagePanel.querySelector(".pset-math-developer-message-title").textContent,
+      third.title,
+    );
+    assert.equal(
+      manager.developerMessagePanel.querySelector(".pset-math-developer-message-progress").textContent,
+      "3 of 3",
     );
 
     assert.equal(await manager.dismissDeveloperMessage(), true);

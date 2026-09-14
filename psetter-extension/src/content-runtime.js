@@ -14530,12 +14530,19 @@ import {
         continue;
       // Restore only a contiguous name from the original MathQuill LaTeX.
       // Explicit \cdot/* multiplication remains multiplication, even when it
-      // spells the same letters (for example h*a*t*i).
-      let a = new RegExp(`(^|[^A-Za-z0-9_])${s}(?=[^A-Za-z0-9_]|$)`).test(e);
+      // spells the same letters (for example h*a*t*i). Hatted basis vectors
+      // are context-defined names rather than MathQuill operator names, so
+      // MathQuill exposes them as ordinary letters. Allow those names to be
+      // adjacent to an implicit factor (`2hati`, `hatihati`) while still
+      // requiring the exact contiguous spelling in the source.
+      let isVectorAlias = PSETTER_VECTOR_ALIAS_NAMES.has(s),
+        a = isVectorAlias
+          ? e.includes(s)
+          : new RegExp(`(^|[^A-Za-z0-9_])${s}(?=[^A-Za-z0-9_]|$)`).test(e);
       // MathQuill can expose a typed multi-letter name with spacing between
       // its glyphs. Accept that representation too, while deliberately not
       // accepting `h*a*t*i`, which is explicit multiplication.
-      if (!a) {
+      if (!a && !isVectorAlias) {
         let c = s.split("").join("\\s*");
         a = new RegExp(`(^|[^A-Za-z0-9_])${c}(?=[^A-Za-z0-9_]|$)`).test(e);
       }
@@ -14738,7 +14745,7 @@ import {
       authoredSymbols.push([latex, name]);
     for (let [source, output] of authoredSymbols) {
       let identity = psetterParserIdentity(source);
-      identity && overrides.set(identity, output);
+      identity && overrides.set(identity, output === "omicron" ? "o" : output);
     }
     return overrides;
   }

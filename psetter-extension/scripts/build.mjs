@@ -8,8 +8,6 @@ const extensionDir = path.resolve(scriptDir, "..");
 const rootDir = path.resolve(extensionDir, "..");
 const source = path.join(extensionDir, "src", "content-entry.js");
 const manifestPath = path.join(extensionDir, "manifest.json");
-const isDev = process.argv.includes("--dev");
-
 function runtimeConfigPlugin(runtimeConfigPath) {
   if (!runtimeConfigPath) return null;
   const publicRuntimeConfigPath = path.join(extensionDir, "runtime-config.js");
@@ -30,9 +28,7 @@ function runtimeConfigPlugin(runtimeConfigPath) {
 async function buildContent({ runtimeConfigPath = null, outputPath = null } = {}) {
   const output =
     outputPath ??
-    (isDev
-      ? path.join(rootDir, "dist", ".build", "content-dev.js")
-      : path.join(extensionDir, "content.js"));
+    path.join(extensionDir, "content.js");
   const plugin = runtimeConfigPlugin(runtimeConfigPath);
 
   await mkdir(path.dirname(output), { recursive: true });
@@ -44,10 +40,10 @@ async function buildContent({ runtimeConfigPath = null, outputPath = null } = {}
     target: ["chrome120"],
     outfile: output,
     sourcemap: false,
-    minify: !isDev,
+    minify: true,
     legalComments: "none",
     define: {
-      __PSETTER_DEV_BUILD__: JSON.stringify(isDev),
+      __PSETTER_DEV_BUILD__: "false",
     },
     plugins: plugin ? [plugin] : [],
     banner: {

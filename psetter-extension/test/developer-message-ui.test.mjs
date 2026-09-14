@@ -33,7 +33,7 @@ test("developer message surfaces are local, text-only, and dismissible", async (
   assert.match(theme, /url\("vendor\/font\/InterVariable\.woff2"\)/);
 });
 
-test("popup queues two notifications through the existing read and dismiss controls", async () => {
+test("popup queues multiple notifications through the existing read and dismiss controls", async () => {
   const [html, runtimeConfig, popupScript] = await Promise.all([
     readFile(new URL("popup.html", extensionDir), "utf8"),
     readFile(new URL("runtime-config.js", extensionDir), "utf8"),
@@ -51,8 +51,14 @@ test("popup queues two notifications through the existing read and dismiss contr
     text: "Second text",
     signature: "- Pedro",
   };
+  const third = {
+    id: "notice-3",
+    title: "Third notice",
+    text: "Third text",
+    signature: "- Pedro",
+  };
   const remoteConfig = {
-    developerMessages: [first, second],
+    developerMessages: [first, second, third],
     disabled: false,
     feedbackDisabled: true,
     minimumSupportedVersion: null,
@@ -109,15 +115,22 @@ test("popup queues two notifications through the existing read and dismiss contr
     open.click();
     assert.equal(panel.hidden, false);
     assert.equal(window.document.querySelector("#developerMessageTitle").textContent, first.title);
-    assert.equal(window.document.querySelector("#developerMessageProgress").textContent, "1 of 2");
+    assert.equal(window.document.querySelector("#developerMessageProgress").textContent, "1 of 3");
 
     close.click();
     await new Promise((resolve) => window.setTimeout(resolve, 0));
     assert.equal(panel.hidden, true);
-    assert.equal(open.hidden, false, "second notification remains queued");
+    assert.equal(open.hidden, false, "later notifications remain queued");
     open.click();
     assert.equal(window.document.querySelector("#developerMessageTitle").textContent, second.title);
-    assert.equal(window.document.querySelector("#developerMessageProgress").textContent, "2 of 2");
+    assert.equal(window.document.querySelector("#developerMessageProgress").textContent, "2 of 3");
+
+    close.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    assert.equal(open.hidden, false, "third notification remains queued");
+    open.click();
+    assert.equal(window.document.querySelector("#developerMessageTitle").textContent, third.title);
+    assert.equal(window.document.querySelector("#developerMessageProgress").textContent, "3 of 3");
   } finally {
     dom.window.close();
   }
