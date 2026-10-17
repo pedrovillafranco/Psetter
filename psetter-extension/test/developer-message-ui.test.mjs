@@ -5,7 +5,7 @@ import { JSDOM } from "jsdom";
 
 const extensionDir = new URL("../", import.meta.url);
 
-test("developer message surfaces are local, text-only, and dismissible", async () => {
+test("developer message surfaces are local, text-only, and explicitly dismissible", async () => {
   const [popup, popupScript, runtime, styles, theme] = await Promise.all([
     readFile(new URL("popup.html", extensionDir), "utf8"),
     readFile(new URL("popup.js", extensionDir), "utf8"),
@@ -17,15 +17,19 @@ test("developer message surfaces are local, text-only, and dismissible", async (
   assert.match(popup, /id="developerMessageNotice"/);
   assert.match(popup, /id="developerMessagePanel"/);
   assert.match(popup, /id="developerMessageClose"/);
+  assert.match(popup, /id="developerMessagePrevious"/);
   assert.match(popup, /id="developerMessageProgress"/);
-  assert.doesNotMatch(popup, /developerMessageDismiss/);
+  assert.match(popup, /id="developerMessageNext"/);
+  assert.match(popup, /id="developerMessageDismiss"/);
   assert.match(popupScript, /developerMessageReadId/);
   assert.match(popupScript, /textContent = message\.text/);
-  assert.doesNotMatch(popupScript, /developerMessageDismiss/);
+  assert.match(popupScript, /developerMessageDismiss/);
   assert.doesNotMatch(popupScript, /innerHTML/);
   assert.match(runtime, /developerMessageReadId/);
   assert.match(runtime, /developerMessageReadIds/);
   assert.match(runtime, /R\("p", "pset-math-developer-message-text", message\.text\)/);
+  assert.match(runtime, /pset-math-developer-message-nav/);
+  assert.match(runtime, /pset-math-developer-message-dismiss/);
   assert.doesNotMatch(runtime, /developerMessage.*innerHTML/s);
   assert.match(styles, /\.pset-math-developer-message-panel/);
   assert.match(styles, /\.pset-math-developer-message-button/);
@@ -73,9 +77,11 @@ test("popup queues multiple notifications through the existing read and dismiss 
   });
   const { window } = dom;
   const storage = {};
+  let storageChanged;
+  let remoteConfigLoadCount = 0;
   window.chrome = {
     runtime: {
-      getManifest: () => ({ version: "0.1.3" }),
+      getManifest: () => ({ version: "0.1.4" }),
       getURL: (value = "") => `chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/${value}`,
     },
     storage: {
@@ -88,17 +94,23 @@ test("popup queues multiple notifications through the existing read and dismiss 
           Object.assign(storage, value);
         },
       },
-      onChanged: { addListener() {} },
+      onChanged: {
+        addListener(listener) { storageChanged = listener; },
+      },
     },
   };
   window.eval(runtimeConfig);
   window.__psetterRemoteConfig = {
     defaults: remoteConfig,
-    load: async () => remoteConfig,
+    load: async () => {
+      remoteConfigLoadCount += 1;
+      return remoteConfig;
+    },
     readDeveloperMessageReadId: async () => null,
     readDeveloperMessageReadIds: async () => [],
     developerMessageReadKey: "developerMessageReadId",
     developerMessageReadIdsKey: "developerMessageReadIds",
+    developerNotificationTokenKey: "psetterDeveloperNotificationToken",
     normalizeDeveloperMessageReadId: (value) => value,
     normalizeDeveloperMessageReadIds: (value) => value,
     isVersionBelow: () => false,
@@ -108,8 +120,17 @@ test("popup queues multiple notifications through the existing read and dismiss 
   try {
     window.eval(popupScript);
     await new Promise((resolve) => window.setTimeout(resolve, 0));
+    assert.equal(remoteConfigLoadCount, 1);
+    await storageChanged(
+      { psetterDeveloperNotificationToken: { newValue: "local-token" } },
+      "local",
+    );
+    assert.equal(remoteConfigLoadCount, 2, "changing the local token refreshes the popup feed");
     const open = window.document.querySelector("#developerMessageOpen");
     const close = window.document.querySelector("#developerMessageClose");
+    const previous = window.document.querySelector("#developerMessagePrevious");
+    const next = window.document.querySelector("#developerMessageNext");
+    const dismiss = window.document.querySelector("#developerMessageDismiss");
     const panel = window.document.querySelector("#developerMessagePanel");
     assert.equal(open.hidden, false);
     open.click();
@@ -120,14 +141,19 @@ test("popup queues multiple notifications through the existing read and dismiss 
     close.click();
     await new Promise((resolve) => window.setTimeout(resolve, 0));
     assert.equal(panel.hidden, true);
-    assert.equal(open.hidden, false, "later notifications remain queued");
+    assert.equal(open.hidden, false, "closing does not dismiss the notification");
     open.click();
+    assert.equal(window.document.querySelector("#developerMessageTitle").textContent, first.title);
+    assert.equal(window.document.querySelector("#developerMessageProgress").textContent, "1 of 3");
+    assert.equal(previous.disabled, true);
+    assert.equal(next.disabled, false);
+    next.click();
     assert.equal(window.document.querySelector("#developerMessageTitle").textContent, second.title);
     assert.equal(window.document.querySelector("#developerMessageProgress").textContent, "2 of 3");
 
-    close.click();
+    dismiss.click();
     await new Promise((resolve) => window.setTimeout(resolve, 0));
-    assert.equal(open.hidden, false, "third notification remains queued");
+    assert.equal(open.hidden, false, "undismissed notifications remain queued");
     open.click();
     assert.equal(window.document.querySelector("#developerMessageTitle").textContent, third.title);
     assert.equal(window.document.querySelector("#developerMessageProgress").textContent, "3 of 3");

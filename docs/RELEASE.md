@@ -15,9 +15,8 @@ Git tag and commit
         +--> reproducible build
                   |
                   v
-        psetter-v<version>-community.zip       (Chrome)
-        psetter-v<version>-firefox-community.zip
-                                                (Firefox)
+        dist/staging/psetter-v<version>-community.zip       (Chrome)
+        dist/staging/psetter-v<version>-firefox-community.zip (Firefox)
                   |
                   v
         community distribution artifact (Chrome or Firefox)
@@ -44,11 +43,12 @@ pnpm extension:reproducible:firefox
 ```
 
 Each reproducibility check builds its browser-specific community package twice
-and compares the SHA-256 digests. The resulting files are:
+and compares the SHA-256 digests. It writes replaceable ZIPs under
+`dist/staging/`:
 
 ```text
-dist/psetter-v<version>-community.zip
-dist/psetter-v<version>-firefox-community.zip
+dist/staging/psetter-v<version>-community.zip
+dist/staging/psetter-v<version>-firefox-community.zip
 ```
 
 Store builds use the same browser target commands with a reviewed private
@@ -59,12 +59,33 @@ The public source includes the workspace manifests, dependency lockfile,
 extension package metadata, build scripts, authored source, tests, and
 bundled third-party notices required to inspect and reproduce this build.
 
+## Local Store builds and staging
+
+Normal Store build commands update stable unpacked directories:
+
+```text
+dist/psetter-store/          # Chrome and Edge
+dist/psetter-firefox-store/  # Firefox
+```
+
+These commands do not create a ZIP. Store content compilation uses a temporary
+directory that is removed after success or failure.
+
+Reproducibility checks build twice in a temporary directory. They copy the
+verified ZIP to `dist/staging/` after the hashes match. They do not replace the
+unpacked Store directories. Tests use fixture overlays and temporary output
+directories, so they cannot replace a local build with a test configuration.
+
+The packaging script accepts `--output-dir <directory>` for isolated builds.
+When this option is present, it writes both the unpacked package and ZIP inside
+that directory. Store packaging still requires the reviewed overlay.
+
 ## Record a final release
 
 After the release candidate has been reviewed and the unchanged artifact is
 approved, create the final version tag on the same commit. The versioned
-candidate attestation is generated under `dist/`, which is ignored and must not
-dirty the public worktree:
+candidate and release files are grouped by version under `dist/releases/`, which
+is ignored and must not dirty the public worktree:
 
 ```sh
 pnpm release:candidate:community
@@ -78,11 +99,16 @@ The final command requires an explicit channel, the exact version tag on
 `HEAD`, and a clean worktree. It runs syntax and manifest checks, the complete
 test suite, and the reproducibility check. It then independently recomputes
 the build identity and fails if the final artifact differs from the
-smoke-tested candidate. The release record is written to:
+smoke-tested candidate. The artifacts and provenance records are kept together
+at:
 
 ```text
-dist/psetter-v<version>-community.release.json       # Chrome
-dist/psetter-v<version>-firefox-community.release.json
+dist/releases/v<version>/psetter-v<version>-community.zip
+dist/releases/v<version>/psetter-v<version>-community.candidate.json
+dist/releases/v<version>/psetter-v<version>-community.release.json
+dist/releases/v<version>/psetter-v<version>-firefox-community.zip
+dist/releases/v<version>/psetter-v<version>-firefox-community.candidate.json
+dist/releases/v<version>/psetter-v<version>-firefox-community.release.json
 ```
 
 The record separates build identity (version, channel, browser, public commit, artifact,

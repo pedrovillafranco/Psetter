@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.1.4 (Unreleased)
+
+- Kept incomplete typing silent and reused the reset comment box above the answer after typing stops.
+- Underlined the native-input action, scoped it to one answer submission, and fixed the logo URL in the browser demo.
+- Fixed outside-click dismissal with the full editor open and made notification progress text pure white.
+
+- Fixed notification requests blocked by the Store popup page policy.
+
+- Separated draft, syntax, unsupported-notation, ambiguity, and runtime recovery states.
+- Added visible sync notices and a per-field native entry option.
+- Preserved unfinished drafts across editor toggles and released fields after runtime faults.
+
+- Kept normal Store builds unpacked and isolated packaging tests from local builds.
+- Moved temporary ZIPs to dist/staging and versioned release files to dist/releases.
+
+- Fixed parentheses during typing and activation of existing answers.
+- Preserved nested addition, multiplication, and exponent grouping during activation.
+- Preserved explicitly declared names such as dt, dx, and Deltat across answer fields.
+- Added reproducible generated interaction tests and native fallback checks.
+- Added a notification bell with an unread count and notification navigation.
+- Separated notification minimization from explicit dismissal.
+- Fixed queued notification cache loading after extension startup.
+
 ## 0.1.3
 
 - Added explicit Chrome and Firefox build targets with disjoint package,

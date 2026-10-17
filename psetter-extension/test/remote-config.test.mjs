@@ -170,6 +170,53 @@ test("accepts the v0.1.3 schema version for the isolated Store endpoint", () => 
   );
 });
 
+test("accepts a normalized queued config after a cache round-trip", async () => {
+  const { developerMessage, ...withoutLegacyMessage } = validConfig;
+  const normalized = api.validate({
+    ...withoutLegacyMessage,
+    schemaVersion: 2,
+    developerMessages: [developerMessage],
+  });
+  storageState.testRemoteConfig = { config: normalized, fetchedAt: Date.now() };
+  assert.deepEqual(await api.loadCached(), normalized);
+  assert.deepEqual(await api.load({ force: true }), normalized);
+  delete storageState.testRemoteConfig;
+});
+
+test("a local developer token opts into a separate notification cache audience", async () => {
+  const token = "a".repeat(64);
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  delete storageState.testRemoteConfig;
+  storageState.psetterDeveloperNotificationToken = token;
+  nextRemoteConfig = validConfig;
+  globalThis.fetch = async (_url, options = {}) => {
+    requests.push(options.headers?.Authorization ?? null);
+    return new Response(JSON.stringify(nextRemoteConfig), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  try {
+    assert.equal(await api.readDeveloperNotificationToken(), token);
+    assert.deepEqual(await api.load({ force: true }), validConfig);
+    assert.equal(requests.at(-1), `Bearer ${token}`);
+    assert.equal(storageState.testRemoteConfig.audience, "developer");
+    assert.deepEqual(await api.loadCached(), validConfig);
+
+    delete storageState.psetterDeveloperNotificationToken;
+    assert.deepEqual(await api.loadCached(), api.defaults);
+    assert.deepEqual(await api.load({ force: true }), validConfig);
+    assert.equal(requests.at(-1), null, "public requests omit the developer token");
+    assert.equal(storageState.testRemoteConfig.audience, "everyone");
+  } finally {
+    globalThis.fetch = originalFetch;
+    nextRemoteConfig = null;
+    delete storageState.psetterDeveloperNotificationToken;
+    delete storageState.testRemoteConfig;
+  }
+});
+
 test("tracks unread state and persists dismissal", async () => {
   delete storageState.testDeveloperMessageReadId;
   delete storageState.testDeveloperMessageReadIds;

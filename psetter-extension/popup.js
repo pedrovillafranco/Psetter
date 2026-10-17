@@ -86,8 +86,11 @@
   const developerMessageTitle = getNode("#developerMessageTitle");
   const developerMessageText = getNode("#developerMessageText");
   const developerMessageSignature = getNode("#developerMessageSignature");
+  const developerMessagePrevious = getNode("#developerMessagePrevious");
   const developerMessageProgress = getNode("#developerMessageProgress");
+  const developerMessageNext = getNode("#developerMessageNext");
   const developerMessageClose = getNode("#developerMessageClose");
+  const developerMessageDismiss = getNode("#developerMessageDismiss");
 
   let settings = defaults;
   let usage = { safeTermCombinations: 0, dailySafeTermCombinations: {} };
@@ -95,6 +98,7 @@
   let developerMessageReadId = null;
   let developerMessageReadIds = [];
   let developerMessagePanelOpen = false;
+  let developerMessageIndex = 0;
   let remoteConfig = REMOTE_API?.defaults ?? {
     disabled: false,
     feedbackDisabled: !FEEDBACK_ENABLED,
@@ -222,6 +226,13 @@
     return getDeveloperMessages().filter(isOneDeveloperMessageUnread);
   }
 
+  function getCurrentUnreadDeveloperMessage() {
+    const messages = getUnreadDeveloperMessages();
+    if (!messages.length) return null;
+    developerMessageIndex = Math.max(0, Math.min(developerMessageIndex, messages.length - 1));
+    return messages[developerMessageIndex];
+  }
+
   function getDeveloperMessagePosition(message) {
     const messages = getDeveloperMessages();
     const position = messages.findIndex((item) => item.id === message?.id);
@@ -230,13 +241,14 @@
 
   function renderDeveloperMessage() {
     const unreadMessages = getUnreadDeveloperMessages();
-    const message = unreadMessages[0] ?? null;
+    const message = getCurrentUnreadDeveloperMessage();
     const unread = Boolean(message);
     developerMessageNotice.hidden = !unread || developerMessagePanelOpen;
     developerMessageOpen.hidden = !unread;
 
     if (!message) {
       developerMessageQueue.textContent = "New from Psetter";
+      developerMessageIndex = 0;
       developerMessagePanelOpen = false;
       developerMessagePanel.hidden = true;
       return;
@@ -252,18 +264,33 @@
     developerMessageSignature.textContent = message.signature ?? "";
     developerMessageSignature.hidden = !message.signature;
     developerMessageProgress.textContent = getDeveloperMessagePosition(message);
+    developerMessagePrevious.disabled = developerMessageIndex <= 0;
+    developerMessageNext.disabled = developerMessageIndex >= unreadMessages.length - 1;
     developerMessagePanel.hidden = !developerMessagePanelOpen;
   }
 
   function openDeveloperMessagePanel() {
-    if (!getUnreadDeveloperMessages()[0]) return;
+    if (!getCurrentUnreadDeveloperMessage()) return;
     developerMessagePanelOpen = true;
     renderDeveloperMessage();
     developerMessageClose.focus();
   }
 
+  function closeDeveloperMessagePanel() {
+    developerMessagePanelOpen = false;
+    renderDeveloperMessage();
+  }
+
+  function moveDeveloperMessage(delta) {
+    const messages = getUnreadDeveloperMessages();
+    if (messages.length < 2) return;
+    developerMessageIndex = Math.max(0, Math.min(developerMessageIndex + delta, messages.length - 1));
+    renderDeveloperMessage();
+    (delta < 0 ? developerMessagePrevious : developerMessageNext).focus();
+  }
+
   async function dismissDeveloperMessage() {
-    const message = getUnreadDeveloperMessages()[0];
+    const message = getCurrentUnreadDeveloperMessage();
     const saved = await REMOTE_API?.dismissDeveloperMessage?.(message?.id);
     if (!saved) return;
     developerMessageReadId = message.id;
@@ -274,29 +301,51 @@
 
   function bindDeveloperMessageControls() {
     developerMessageOpen.addEventListener("click", openDeveloperMessagePanel);
-    developerMessageClose.addEventListener("click", dismissDeveloperMessage);
+    developerMessagePrevious.addEventListener("click", () => moveDeveloperMessage(-1));
+    developerMessageNext.addEventListener("click", () => moveDeveloperMessage(1));
+    developerMessageClose.addEventListener("click", closeDeveloperMessagePanel);
+    developerMessageDismiss.addEventListener("click", dismissDeveloperMessage);
     developerMessagePanel.addEventListener("keydown", (event) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      developerMessagePanelOpen = false;
-      renderDeveloperMessage();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeDeveloperMessagePanel();
+      } else if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        moveDeveloperMessage(-1);
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        moveDeveloperMessage(1);
+      }
     });
     try {
       const api = getExtensionApi();
       const readKey = REMOTE_API?.developerMessageReadKey;
       const readIdsKey = REMOTE_API?.developerMessageReadIdsKey;
-      if (!readKey && !readIdsKey) return;
-      api?.storage?.onChanged?.addListener((changes, areaName) => {
+      const developerNotificationTokenKey = REMOTE_API?.developerNotificationTokenKey;
+      if (!readKey && !readIdsKey && !developerNotificationTokenKey) return;
+      api?.storage?.onChanged?.addListener(async (changes, areaName) => {
         if (areaName !== "local") return;
+        let shouldRender = false;
+        if (developerNotificationTokenKey && changes[developerNotificationTokenKey]) {
+          const nextConfig = await REMOTE_API?.load?.({ force: true });
+          if (nextConfig) {
+            remoteConfig = nextConfig;
+            developerMessageIndex = 0;
+            renderRemoteConfig();
+          }
+          shouldRender = true;
+        }
         if (readKey && changes[readKey]) {
           developerMessageReadId =
             REMOTE_API?.normalizeDeveloperMessageReadId?.(changes[readKey].newValue) ?? null;
+          shouldRender = true;
         }
         if (readIdsKey && changes[readIdsKey]) {
           developerMessageReadIds =
             REMOTE_API?.normalizeDeveloperMessageReadIds?.(changes[readIdsKey].newValue) ?? [];
+          shouldRender = true;
         }
-        if (!changes[readKey] && !(readIdsKey && changes[readIdsKey])) return;
+        if (!shouldRender) return;
         developerMessagePanelOpen = false;
         renderDeveloperMessage();
       });

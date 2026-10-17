@@ -81,8 +81,8 @@ pnpm extension:reproducible:firefox
 ```
 
 The community channel is the public-source build. Chrome and Firefox artifacts
-are written to `dist/psetter-v<version>-community.zip` and
-`dist/psetter-v<version>-firefox-community.zip`, respectively. Store artifacts
+are written to `dist/staging/psetter-v<version>-community.zip` and
+`dist/staging/psetter-v<version>-firefox-community.zip`, respectively. Store artifacts
 use the same browser targets and require the reviewed private overlay, supplied
 explicitly with `--store-overlay`.
 
@@ -95,7 +95,9 @@ pnpm extension:package:store:firefox
 ```
 
 The unpacked Store directories use one name per target: `dist/psetter-store`
-for Chrome/Edge and `dist/psetter-firefox-store` for Firefox.
+for Chrome/Edge and `dist/psetter-firefox-store` for Firefox. Normal Store
+builds update these unpacked directories without creating ZIPs. Reproducibility
+checks use temporary directories and place verified ZIPs under `dist/staging/`.
 
 The ZIP is created from an explicit allowlist with stable file ordering,
 timestamps, and permissions. The reproducibility check builds it twice and
@@ -112,7 +114,8 @@ pnpm release:prepare:community
 # Firefox variants append :firefox to each command.
 ```
 
-The candidate command writes an ignored, generated attestation under `dist/`.
+Candidate and release commands group ZIPs and generated attestations under
+`dist/releases/v<version>/`. These files are ignored by Git.
 The final command reproduces the tagged artifact and fails unless its build
 identity and SHA-256 match that candidate. It writes a release record but does
 not publish or upload anything. Bare `release:prepare` is intentionally invalid;

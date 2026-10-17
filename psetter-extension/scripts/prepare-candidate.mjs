@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -56,7 +56,7 @@ const reproducible = spawnSync(
 if (reproducible.status !== 0) process.exit(reproducible.status ?? 1);
 
 const artifact = artifactFileName(manifest.version, channel, browser);
-const artifactPath = path.join(rootDir, "dist", artifact);
+const artifactPath = path.join(rootDir, "dist", "staging", artifact);
 const lockfileSha256 = await sha256File(path.join(rootDir, "pnpm-lock.yaml"));
 const build = createBuildIdentity({
   version: manifest.version,
@@ -71,8 +71,10 @@ const build = createBuildIdentity({
   packageManager: rootPackage.packageManager,
 });
 const state = createCandidateState({ build });
-const statePath = path.join(rootDir, "dist", `${artifact.replace(/\.zip$/u, "")}.candidate.json`);
+const releaseDir = path.join(rootDir, "dist", "releases", `v${manifest.version}`);
+const statePath = path.join(releaseDir, `${artifact.replace(/\.zip$/u, "")}.candidate.json`);
 await mkdir(path.dirname(statePath), { recursive: true });
+await copyFile(artifactPath, path.join(releaseDir, artifact));
 await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 console.log(`Candidate attestation written to ${statePath}`);
 console.log(`Candidate SHA-256 ${build.sha256}  ${artifact}`);

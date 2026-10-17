@@ -60,6 +60,9 @@ async function createRuntime(html, options = {}) {
   const configuredReadIds = options.developerMessageReadIds ?? [];
   const listeners = new Set();
   let runtimeMessageListener;
+  const notifyStorageChanged = async (changes, areaName = "local") => {
+    await Promise.all([...listeners].map((listener) => listener(changes, areaName)));
+  };
   window.chrome = {
     runtime: {
       getURL: (path = "") => `chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/${path}`,
@@ -93,10 +96,14 @@ async function createRuntime(html, options = {}) {
   window.__psetterRemoteConfig = {
     defaults: configuredRemoteConfig,
     remoteConfigKey: "remoteConfig",
+    developerNotificationTokenKey: "psetterDeveloperNotificationToken",
     developerMessageReadKey: "developerMessageRead",
     validate: (value) => value,
     loadCached: async () => configuredRemoteConfig,
-    load: async () => configuredRemoteConfig,
+    load: async (loadOptions) =>
+      options.loadRemoteConfig
+        ? options.loadRemoteConfig(loadOptions)
+        : configuredRemoteConfig,
     readDeveloperMessageReadId: async () => configuredReadId,
     readDeveloperMessageReadIds: async () => configuredReadIds,
     dismissDeveloperMessage: async () => true,
@@ -113,7 +120,7 @@ async function createRuntime(html, options = {}) {
   options.beforeRuntime?.(window);
   window.eval(runtime);
   await new Promise((resolve) => window.setTimeout(resolve, 30));
-  return { dom, window, storage, runtimeMessageListener };
+  return { dom, window, storage, runtimeMessageListener, notifyStorageChanged };
 }
 
 function contextItems(controller) {
@@ -341,21 +348,19 @@ test("queued developer messages use one page panel and advance after dismissal",
       "1 of 3",
     );
 
-    assert.equal(await manager.dismissDeveloperMessage(), true);
-    assert.equal(manager.developerMessagePanel, undefined);
-    assert.equal(manager.developerMessageButton.hidden, false, "later messages remain queued");
+    manager.developerMessagePanel.querySelector(".pset-math-developer-message-close").click();
+    assert.equal(manager.developerMessagePanel, undefined, "closing only hides the panel");
+    assert.equal(manager.developerMessageButton.hidden, false, "closed notification remains available");
     assert.equal(manager.openDeveloperMessage(), true);
+    manager.developerMessagePanel.querySelector(".pset-math-developer-message-nav[aria-label='Next notification']").click();
     assert.equal(
       manager.developerMessagePanel.querySelector(".pset-math-developer-message-title").textContent,
       second.title,
     );
-    assert.equal(
-      manager.developerMessagePanel.querySelector(".pset-math-developer-message-progress").textContent,
-      "2 of 3",
-    );
 
     assert.equal(await manager.dismissDeveloperMessage(), true);
-    assert.equal(manager.developerMessageButton.hidden, false, "third message remains queued");
+    assert.equal(manager.developerMessagePanel, undefined);
+    assert.equal(manager.developerMessageButton.hidden, false, "later messages remain queued");
     assert.equal(manager.openDeveloperMessage(), true);
     assert.equal(
       manager.developerMessagePanel.querySelector(".pset-math-developer-message-title").textContent,
@@ -367,7 +372,73 @@ test("queued developer messages use one page panel and advance after dismissal",
     );
 
     assert.equal(await manager.dismissDeveloperMessage(), true);
+    assert.equal(manager.developerMessageButton.hidden, false, "the undismissed first message remains queued");
+    assert.equal(manager.openDeveloperMessage(), true);
+    assert.equal(
+      manager.developerMessagePanel.querySelector(".pset-math-developer-message-title").textContent,
+      first.title,
+    );
+    assert.equal(
+      manager.developerMessagePanel.querySelector(".pset-math-developer-message-progress").textContent,
+      "1 of 3",
+    );
+
+    assert.equal(await manager.dismissDeveloperMessage(), true);
     assert.equal(manager.developerMessageButton.hidden, true, "queue is empty");
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("local developer token changes the live page notification audience immediately", async () => {
+  const first = {
+    id: "public-notice",
+    title: "Public notice",
+    text: "Everyone sees this.",
+    signature: null,
+  };
+  const developerTest = {
+    id: "developer-notice",
+    title: "Developer notice",
+    text: "Only the opted-in developer sees this.",
+    signature: null,
+  };
+  const publicConfig = { ...remoteConfig, developerMessage: first, developerMessages: [first] };
+  const developerConfig = {
+    ...publicConfig,
+    developerMessages: [first, developerTest],
+  };
+  const loadCalls = [];
+  let developerEnabled = false;
+  const { dom, window, storage, notifyStorageChanged } = await createRuntime(
+    problem("local_developer_audience", "<p>Find x.</p>"),
+    {
+      remoteConfig: publicConfig,
+      loadRemoteConfig: async (options) => {
+        loadCalls.push(options);
+        return developerEnabled ? developerConfig : publicConfig;
+      },
+    },
+  );
+  try {
+    const manager = window.__psetterRuntime;
+    assert.equal(manager.getUnreadDeveloperMessages().length, 1);
+
+    developerEnabled = true;
+    storage.psetterDeveloperNotificationToken = "a".repeat(64);
+    await notifyStorageChanged(
+      { psetterDeveloperNotificationToken: { newValue: storage.psetterDeveloperNotificationToken } },
+    );
+    assert.equal(loadCalls.at(-1)?.force, true);
+    assert.equal(manager.getUnreadDeveloperMessages().length, 2);
+
+    developerEnabled = false;
+    delete storage.psetterDeveloperNotificationToken;
+    await notifyStorageChanged({
+      psetterDeveloperNotificationToken: { oldValue: "a".repeat(64), newValue: undefined },
+    });
+    assert.equal(manager.getUnreadDeveloperMessages().length, 1);
   } finally {
     window.__psetterRuntime?.dispose();
     dom.window.close();
@@ -974,6 +1045,33 @@ test("the visible toggle immediately closes an active editor before storage sett
     assert.equal(window.document.querySelectorAll(".pset-math-takeover").length, 1);
     input.dispatchEvent(new window.Event("focus", { bubbles: true }));
     assert.equal(staleActivation, 2, "enabled page preserves the same native focus behavior");
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("outside clicks close the editor while its details panel is open", async () => {
+  const { dom, window } = await createRuntime(problem("outside_close", "<p>Find x.</p>", "x"));
+  try {
+    const manager = window.__psetterRuntime;
+    const input = window.document.querySelector("#input_outside_close");
+    const controller = manager.controllers.get(input);
+    manager.activeController = controller;
+    controller.activate();
+    controller.toggleDetails();
+    assert.equal(controller.detailsOpen, true);
+
+    controller.detailsPanel.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    assert.equal(manager.activeController, controller, "clicks inside the details panel stay owned");
+    assert.equal(controller.active, true);
+
+    const outsideButton = window.document.createElement("button");
+    window.document.body.appendChild(outsideButton);
+    outsideButton.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    assert.equal(manager.activeController, undefined);
+    assert.equal(controller.active, false);
+    assert.equal(input.value, "x", "closing the editor preserves the MITx answer");
   } finally {
     window.__psetterRuntime?.dispose();
     dom.window.close();
@@ -1625,6 +1723,355 @@ test("seeded unsupported-notation fuzzing never produces a safe conversion", asy
     }
     assert.deepEqual(failures, [], `seed=${seed}`);
     assert.equal(controller.input.value, "x");
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+
+test("parentheses remain editable during typing and native answer hydration", async () => {
+  const expressions = ["(x+1)", "2*(x+1)", "(x+1)/(y+2)", "((x+y)*(x-y))", "x^(2)*(y+1)", "(x^2)^3", "x+(y+1)", "x*(y*x)"];
+  const { dom, window } = await createRuntime(expressions.map((value, index) =>
+    problem(`group_${index}`, '<p><span role="math" aria-label="x+y"></span></p>', value),
+  ).join(""));
+  try {
+    for (let index = 0; index < expressions.length; index++) {
+      const input = window.document.querySelector(`#input_group_${index}`);
+      const controller = window.__psetterRuntime.controllers.get(input);
+      controller.activate();
+      assert.ok(controller.mathField, `hydrate ${expressions[index]}`);
+      assert.equal(input.value, expressions[index], "activation preserves native bytes");
+      controller.mathField.moveToRightEnd();
+      for (const key of "+(x+1)") controller.typeCharacter(key);
+      assert.equal(controller.lastResult.status, "safe", JSON.stringify(controller.lastResult));
+      assert.equal(controller.nativeEquivalentForQa(`${expressions[index]}+(x+1)`), true, input.value);
+      controller.clearExpression();
+      for (const key of expressions[index]) controller.typeCharacter(key);
+      assert.equal(controller.lastResult.status, "safe", JSON.stringify(controller.lastResult));
+      assert.equal(controller.nativeEquivalentForQa(expressions[index]), true, input.value);
+      controller.deactivate();
+    }
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("declared multi-letter variables and plain aliases stay atomic across multiple answer fields", async () => {
+  const { dom, window } = await createRuntime(`<section class="problem">
+    <p>Use the following variables: <span role="math" aria-label="d t"></span>,
+      <span role="math"><math><mi>d</mi><mi>x</mi></math></span>,
+      and Deltat for <span role="math" aria-label="Delta t"></span>.</p>
+    <div class="formulaequationinput"><input id="input_declared_1" class="math" type="text"></div>
+    <div class="formulaequationinput"><input id="input_declared_2" class="math" type="text"></div>
+  </section>`);
+  try {
+    for (const id of ["input_declared_1", "input_declared_2"]) {
+      const input = window.document.getElementById(id);
+      const controller = window.__psetterRuntime.controllers.get(input);
+      controller.activate();
+      for (const name of ["dt", "dx", "Deltat"]) {
+        assert.ok(controller.semanticContext.aliases.has(name), `${id}: ${name} declaration`);
+        controller.clearExpression();
+        for (const key of `${name}+(x+1)`) controller.typeCharacter(key);
+        assert.equal(controller.lastResult.status, "safe", JSON.stringify(controller.lastResult));
+        assert.equal(controller.nativeEquivalentForQa(`${name}+(x+1)`), true, input.value);
+        controller.clearExpression();
+        for (const key of name.split("").join("*")) controller.typeCharacter(key);
+        assert.equal(controller.nativeEquivalentForQa(name.split("").join("*")), true, "explicit products stay products");
+      }
+      controller.deactivate();
+    }
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+
+test("seeded expression edits preserve grouping, native events, and lifecycle state", async () => {
+  const seed = Number(process.env.PSETTER_INTERACTION_SEED ?? 0x140017) >>> 0;
+  let state = seed;
+  const random = () => (state = (Math.imul(state, 1664525) + 1013904223) >>> 0);
+  const leaves = ["x", "y", "2", "3", "dt", "dx"];
+  const operators = ["+", "-", "*"];
+  const expression = (depth) => depth === 0
+    ? leaves[random() % leaves.length]
+    : `(${expression(depth - 1)}${operators[random() % operators.length]}${expression(depth - 1)})`;
+  const { dom, window } = await createRuntime(problem("generated_edits",
+    '<p>Express the answer in terms of <code>dt</code>, <code>dx</code>, <span role="math" aria-label="x+y"></span>.</p>'));
+  try {
+    const input = window.document.querySelector("#input_generated_edits");
+    const controller = window.__psetterRuntime.controllers.get(input);
+    const events = { input: 0, change: 0, keyup: 0 };
+    for (const type of Object.keys(events)) input.addEventListener(type, () => events[type]++);
+    controller.activate();
+    for (let iteration = 0; iteration < 64; iteration++) {
+      const source = expression(1 + random() % 3);
+      const trace = `seed=${seed} iteration=${iteration} source=${source}`;
+      controller.clearExpression();
+      for (const key of source) controller.typeCharacter(key);
+      assert.equal(controller.lastResult.status, "safe", `${trace} result=${JSON.stringify(controller.lastResult)}`);
+      assert.equal(controller.nativeEquivalentForQa(source), true, `${trace} output=${input.value}`);
+      assert.equal(events.input, events.change, trace);
+      assert.equal(events.input, events.keyup, trace);
+      const output = input.value;
+      const before = { ...events };
+      controller.deactivate();
+      controller.activate();
+      assert.ok(controller.mathField, `${trace} output=${input.value} result=${JSON.stringify(controller.lastResult)}`);
+      assert.equal(input.value, output, trace);
+      assert.deepEqual(events, before, `${trace}: activation must emit no answer events`);
+      controller.mathField.moveToRightEnd();
+      for (const key of "+(1)") controller.typeCharacter(key);
+      assert.equal(controller.nativeEquivalentForQa(`${source}+(1)`), true, `${trace}: editor remains responsive`);
+    }
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("unknown native syntax leaves the native field editable and keys unclaimed", async () => {
+  const { dom, window } = await createRuntime(problem("native_fallback", "<p>Enter an expression.</p>", "x⊕y"));
+  try {
+    const input = window.document.querySelector("#input_native_fallback");
+    const controller = window.__psetterRuntime.controllers.get(input);
+    controller.activate();
+    for (const key of ["(", "x", ")", "Backspace", "ArrowLeft"]) {
+      const event = new window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+      input.dispatchEvent(event);
+      assert.equal(event.defaultPrevented, false, `${key}: native key remains available`);
+      assert.equal(input.classList.contains("pset-math-native-covered"), false);
+      assert.equal(input.readOnly, false);
+      assert.equal(input.disabled, false);
+      assert.equal(input.value, "x⊕y");
+    }
+    input.value = "(x+1)/(y+2)";
+    input.dispatchEvent(new window.Event("input", { bubbles: true }));
+    assert.ok(controller.mathField, "a supported native edit can enter visual mode");
+    assert.equal(input.value, "(x+1)/(y+2)");
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+
+test("variable declarations stay bounded to their list and problem", async () => {
+  const { dom, window } = await createRuntime(`<section class="problem">
+    <p>Express the answer in terms of <span role="math" aria-label="dt"></span>.
+      Another product is <span role="math" aria-label="dx"></span>.</p>
+    <p><span hidden>Use the following variables:</span><span role="math" aria-label="dy"></span></p>
+    <div class="formulaequationinput"><input id="input_scoped_aliases" class="math" type="text"></div>
+    </section>${problem("other_aliases", '<p><span role="math" aria-label="dt"></span></p>')}`);
+  try {
+    const first = window.__psetterRuntime.controllers.get(window.document.getElementById("input_scoped_aliases"));
+    first.activate();
+    assert.equal(first.semanticContext.aliases.has("dt"), true);
+    assert.equal(first.semanticContext.aliases.has("dx"), false, "later narrative does not declare a name");
+    assert.equal(first.semanticContext.aliases.has("dy"), false, "hidden instructions are not evidence");
+    const other = window.__psetterRuntime.controllers.get(window.document.getElementById("input_other_aliases"));
+    other.activate();
+    assert.equal(other.semanticContext.aliases.has("dt"), false, "another problem does not inherit names");
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("unfinished typing stays silent, preserves the native answer, and recovers on completion", async () => {
+  const { dom, window } = await createRuntime(problem("draft_feedback", "<p>Find x.</p>", "x"));
+  try {
+    const input = window.document.querySelector("#input_draft_feedback");
+    const controller = window.__psetterRuntime.controllers.get(input);
+    controller.activate();
+    controller.mathField.moveToRightEnd();
+    controller.typeCharacter("+");
+    assert.equal(input.value, "x");
+    assert.equal(controller.interactionNotice.hidden, true);
+    assert.equal(controller.interactionNotice.dataset.state, "incomplete");
+    const draft = controller.mathField.latex();
+    controller.deactivate();
+    controller.activate();
+    assert.equal(controller.mathField.latex(), draft, "reopening preserves an unfinished draft");
+    assert.equal(input.value, "x");
+    controller.mathField.moveToRightEnd();
+    controller.typeCharacter("1");
+    assert.equal(input.value, "x+1");
+    assert.equal(controller.interactionNotice.hidden, true);
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("unsupported drafts can use native input without repeated interception or stale replay", async () => {
+  const { dom, window } = await createRuntime(problem("native_choice", "<p>Find x.</p>", "x"));
+  try {
+    const input = window.document.querySelector("#input_native_choice");
+    const controller = window.__psetterRuntime.controllers.get(input);
+    controller.activate();
+    controller.mathField.latex(String.raw`\sum_{i=1}^{n}i`);
+    const draft = controller.mathField.latex();
+    assert.equal(input.value, "x");
+    assert.equal(controller.interactionNotice.dataset.state, "unsupported");
+    controller.nativeInputButton.focus();
+    assert.equal(controller.active, true, "recovery control focus stays inside the editor session");
+    controller.nativeInputButton.click();
+    assert.equal(controller.mathField, undefined);
+    assert.equal(input.classList.contains("pset-math-native-covered"), false);
+    controller.nativeInputButton.focus();
+    assert.equal(controller.active, true);
+    controller.nativeInputButton.click();
+    assert.equal(controller.mathField.latex(), draft, "explicit resume restores the visual draft");
+    controller.nativeInputButton.click();
+    input.value = "y+2";
+    input.dispatchEvent(new window.Event("input", { bubbles: true }));
+    const event = new window.KeyboardEvent("keydown", { key: "(", bubbles: true, cancelable: true });
+    input.dispatchEvent(event);
+    assert.equal(event.defaultPrevented, false);
+    assert.equal(controller.mathField, undefined, "native edits do not remount the editor");
+    input.value = "x";
+    input.dispatchEvent(new window.Event("input", { bubbles: true }));
+    input.value = "y+2";
+    input.dispatchEvent(new window.Event("input", { bubbles: true }));
+    controller.nativeInputButton.click();
+    assert.ok(controller.mathField);
+    assert.equal(input.value, "y+2");
+    assert.notEqual(controller.mathField.latex(), draft, "native edits invalidate the older visual draft");
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("unfinished drafts survive the page off/on cycle without writing partial answers", async () => {
+  const { dom, window } = await createRuntime(problem("draft_toggle", "<p>Find x.</p>", "x"));
+  try {
+    const input = window.document.querySelector("#input_draft_toggle");
+    const manager = window.__psetterRuntime;
+    let controller = manager.controllers.get(input);
+    controller.activate();
+    controller.mathField.moveToRightEnd();
+    controller.typeCharacter("+");
+    const draft = controller.mathField.latex();
+    await manager.toggleEnabled();
+    assert.equal(input.value, "x");
+    await manager.toggleEnabled();
+    controller = manager.controllers.get(input);
+    controller.activate();
+    assert.equal(controller.mathField.latex(), draft);
+    controller.mathField.moveToRightEnd();
+    controller.typeCharacter("2");
+    assert.equal(input.value, "x+2");
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("an editor runtime fault releases its native field and leaves another field usable", async () => {
+  const { dom, window } = await createRuntime(problem("faulty", "<p>Find x.</p>", "x") + problem("healthy", "<p>Find y.</p>", "y"));
+  try {
+    const manager = window.__psetterRuntime;
+    const input = window.document.querySelector("#input_faulty");
+    const controller = manager.controllers.get(input);
+    controller.activate();
+    controller.mathField.latex = () => { throw new Error("simulated editor failure"); };
+    assert.doesNotThrow(() => controller.recompute());
+    assert.equal(controller.lastResult.issueKind, "runtime");
+    assert.equal(controller.mathField, undefined);
+    assert.equal(input.classList.contains("pset-math-native-covered"), false);
+    assert.equal(input.value, "x");
+    assert.match(controller.interactionMessage.textContent, /using standard input/);
+    assert.match(controller.interactionMessage.textContent, /using standard input/);
+    assert.equal(window.document.activeElement, input, "runtime recovery returns focus to the native input");
+    const event = new window.KeyboardEvent("keydown", { key: "1", cancelable: true, bubbles: true });
+    input.dispatchEvent(event);
+    assert.equal(event.defaultPrevented, false);
+    const healthy = manager.controllers.get(window.document.querySelector("#input_healthy"));
+    healthy.activate();
+    healthy.mathField.moveToRightEnd();
+    healthy.typeCharacter("+");
+    healthy.typeCharacter("1");
+    assert.equal(healthy.input.value, "y+1");
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("rejected native hydration is not retried on every key or focus event", async () => {
+  const { dom, window } = await createRuntime(problem("no_retry", "<p>Find x.</p>", "x⊕y"));
+  try {
+    const input = window.document.querySelector("#input_no_retry");
+    const controller = window.__psetterRuntime.controllers.get(input);
+    let attempts = 0;
+    const original = controller.mountInlineEditorUnchecked.bind(controller);
+    controller.mountInlineEditorUnchecked = () => { attempts++; return original(); };
+    controller.activate();
+    for (let index = 0; index < 4; index++) {
+      input.dispatchEvent(new window.KeyboardEvent("keydown", { key: "x", bubbles: true }));
+      input.dispatchEvent(new window.Event("focus"));
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 10));
+    assert.equal(attempts, 1);
+    assert.equal(controller.interactionNotice.dataset.state, "native-syntax");
+    assert.equal(controller.interactionNotice.hidden, true, "native input needs no warning");
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("MITx field eligibility changes release only the affected input", async () => {
+  const { dom, window } = await createRuntime(problem("eligibility", "<p>Find x.</p>", "x"));
+  try {
+    const input = window.document.querySelector("#input_eligibility");
+    const manager = window.__psetterRuntime;
+    manager.controllers.get(input).activate();
+    input.readOnly = true;
+    await new Promise((resolve) => window.setTimeout(resolve, 30));
+    assert.equal(manager.controllers.has(input), false);
+    assert.equal(input.classList.contains("pset-math-native-covered"), false);
+    assert.equal(input.value, "x");
+    assert.equal(window.document.querySelectorAll(".pset-math-interaction-notice").length, 0);
+    input.readOnly = false;
+    await new Promise((resolve) => window.setTimeout(resolve, 30));
+    assert.equal(manager.controllers.has(input), true);
+    input.type = "password";
+    await new Promise((resolve) => window.setTimeout(resolve, 30));
+    assert.equal(manager.controllers.has(input), false);
+    assert.equal(input.classList.contains("pset-math-native-covered"), false);
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+
+test("sync feedback waits for idle and reuses the reset comment box above the answer", async () => {
+  const { dom, window } = await createRuntime(problem("quiet_feedback", "<p>Find x.</p>", "x"));
+  try {
+    const controller = window.__psetterRuntime.controllers.get(window.document.querySelector("#input_quiet_feedback"));
+    controller.activate();
+    controller.mathField.latex(String.raw`\operatorname{mystery}(x)`);
+    assert.equal(window.document.querySelector(".pset-math-sync-indicator"), null);
+    assert.equal(controller.interactionNotice.hidden, true);
+    await new Promise((resolve) => window.setTimeout(resolve, 1050));
+    assert.equal(controller.interactionNotice.hidden, false, "a persistent sync problem shows a comment after idle");
+    assert.equal(controller.interactionNotice.hidden, false);
+    assert.equal(controller.interactionNotice.classList.contains("pset-math-restore-hint"), true);
+    assert.match(controller.interactionMessage.textContent, /has not been applied/);
+    assert.equal(controller.nativeInputButton.textContent, "Use standard input");
+    controller.mathField.latex("x+1");
+    assert.equal(controller.interactionNotice.hidden, true);
+    controller.mathField.latex(String.raw`\operatorname{mystery}(x)`);
+    controller.deactivate();
+    await new Promise((resolve) => window.setTimeout(resolve, 1050));
+    assert.equal(controller.interactionNotice.hidden, true, "a stale timer cannot restore a deactivated comment");
   } finally {
     window.__psetterRuntime?.dispose();
     dom.window.close();

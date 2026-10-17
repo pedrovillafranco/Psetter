@@ -8,6 +8,7 @@ import {
   isPsetterInstructionalText,
   normalizePsetterMathText,
 } from "./semantic-model.js";
+import { psetterInteractionFeedback } from "./interaction-policy.js";
 
 "use strict";
 (() => {
@@ -21,15 +22,17 @@ import {
     ".schematic",
     ".jsinput",
   ].join(",");
-  function Gn(e) {
+  function psetterInputIsEditable(e) {
     return !(
-      e.dataset.psetMathEnhanced === "true" ||
       e.disabled ||
       e.readOnly ||
       (e.type !== "text" && e.type !== "search") ||
       e.closest(Ln) ||
       e.classList.contains("pset-math-internal")
     );
+  }
+  function Gn(e) {
+    return e.dataset.psetMathEnhanced !== "true" && psetterInputIsEditable(e);
   }
   function $i(e) {
     let t = new Map(),
@@ -101,13 +104,18 @@ import {
   function getExtensionUrl(e) {
     try {
       let t = getExtensionApi();
-      return t?.runtime?.getURL?.(e) ?? "";
+      let i = t?.runtime?.getURL?.(e);
+      if (i) return i;
     } catch (t) {
       // A live content script can outlast an unpacked-extension reload.
       // Treat the URL as unavailable during that teardown window.
       notePsetterContextError(t);
-      return "";
     }
+    // The browser demo can also run from a local web server, where extension
+    // APIs are unavailable. Keep its packaged assets resolvable in that view.
+    if (document.documentElement.hasAttribute("data-psetter-local-demo"))
+      return new URL(e, document.baseURI).href;
+    return "";
   }
   function isAllowedPsetterMessageOrigin(e) {
     if (!e || e === location.origin) return e === location.origin;
@@ -417,7 +425,7 @@ import {
         if (s === ")") return { kind: "rparen", value: s };
         if (s === ",") return { kind: "comma", value: s };
         if ("+-*/^%=<>".includes(s)) return { kind: "operator", value: s };
-        throw new Error(`Unexpected character: ${s}`);
+        throw new SyntaxError(`Unexpected character: ${s}`);
       }
     },
     Ct = class {
@@ -430,7 +438,7 @@ import {
       parse() {
         let t = this.parseExpression(0);
         if (this.current.kind !== "eof")
-          throw new Error(`Unexpected token: ${this.current.value}`);
+          throw new SyntaxError(`Unexpected token: ${this.current.value}`);
         return t;
       }
       advance() {
@@ -496,7 +504,7 @@ import {
               )
                 this.advance();
             if (this.current.kind !== "rparen")
-              throw new Error("Expected closing parenthesis.");
+              throw new SyntaxError("Expected closing parenthesis.");
             return (this.advance(), { type: "call", name: t, args: i });
           }
           return { type: "symbol", name: t };
@@ -505,10 +513,10 @@ import {
           this.advance();
           let t = this.parseExpression(0);
           if (this.current.kind !== "rparen")
-            throw new Error("Expected closing parenthesis.");
+            throw new SyntaxError("Expected closing parenthesis.");
           return (this.advance(), t);
         }
-        throw new Error(
+        throw new SyntaxError(
           `Expected an expression near \u201C${this.current.value}\u201D.`,
         );
       }
@@ -580,13 +588,13 @@ import {
     if (e.operator === "/")
       return { latex: `\\frac{${t.latex}}{${i.latex}}`, precedence: r };
     if (e.operator === "^")
-      return { latex: `${de(t, r)}^{${i.latex}}`, precedence: r };
+      return { latex: `${de(t, r + 1)}^{${i.latex}}`, precedence: r };
     if (e.operator === "*")
       // `\\cdot 10^{n}` is parsed as scientific notation by the bundled
       // LaTeX reader (its exponent-product token).  Use an explicit `*`
       // operator when hydrating native MITx syntax so multiplication remains
       // multiplication and numeric lexical spelling can round-trip safely.
-      return { latex: `${de(t, r)}*${de(i, r)}`, precedence: r };
+      return { latex: `${de(t, r)}*${de(i, r + 1)}`, precedence: r };
     let s =
       {
         "<=": "\\le",
@@ -596,30 +604,11 @@ import {
         "||": "\\parallel",
       }[e.operator] ?? e.operator;
     return {
-      latex: `${de(t, r)}${s}${de(i, r + (e.operator === "-" ? 1 : 0))}`,
+      // Preserve authored grouping even for addition. Per-question graders
+      // can impose syntax requirements beyond algebraic equivalence.
+      latex: `${de(t, r)}${s}${de(i, r + 1)}`,
       precedence: r,
     };
-  }
-  function Bt(e) {
-    let t = e.trim();
-    if (!t) return "";
-    if (/[<>]=?|!=/.test(t) || /-\s*\(\s*-/.test(t))
-      return t
-        .replace(/\*/g, "\\cdot ")
-        .replace(/\bpi\b/g, "\\pi")
-        .replace(/<=/g, "\\le ")
-        .replace(/>=/g, "\\ge ")
-        .replace(/!=/g, "\\ne ");
-    try {
-      return Ae(new Ct(new Rt(t)).parse()).latex;
-    } catch {
-      return t
-        .replace(/\*/g, "\\cdot ")
-        .replace(/\bpi\b/g, "\\pi")
-        .replace(/<=/g, "\\le ")
-        .replace(/>=/g, "\\ge ")
-        .replace(/!=/g, "\\ne ");
-    }
   }
   var mi = ["Error", "'missing'"];
   function Me(e) {
@@ -14215,6 +14204,7 @@ import {
       );
     if (e === null)
       return (
+        (t.syntaxError = !0),
         t.errors.push("The expression is empty."),
         { text: "", precedence: v.atom }
       );
@@ -14239,6 +14229,7 @@ import {
     }
     if (!Array.isArray(e))
       return (
+        (t.syntaxError = !0),
         t.errors.push("The parser returned an unsupported expression object."),
         { text: "", precedence: v.atom }
       );
@@ -14246,6 +14237,7 @@ import {
       r = e.slice(1);
     if (i === "Error")
       return (
+        (t.syntaxError = !0),
         t.errors.push("Part of the expression could not be parsed."),
         { text: "", precedence: v.atom }
       );
@@ -14503,7 +14495,7 @@ import {
     let t = e.closest?.(
       ".problem, .problem-block, .capa, [data-usage-id][class*='problem']",
     );
-    if (t && t.querySelectorAll(psetterNativeAnswerSelector).length === 1) return t;
+    if (t) return t;
     let i = null;
     for (let r = e.parentElement; r && r !== document.body; r = r.parentElement) {
       let n = r.querySelectorAll?.(psetterNativeAnswerSelector).length ?? 0;
@@ -14722,8 +14714,31 @@ import {
       ((a += e.slice(o, p) + r), (s = p + 7));
     }
   }
+  function normalizePsetterScaledParentheses(e) {
+    // MathQuill emits scalable parentheses inside fractions. Convert only
+    // matched pairs so the parser sees ordinary grouping without changing
+    // unmatched or invisible delimiters.
+    let t = /\\left\s*\(|\\right\s*\)/g,
+      i = [],
+      r = [],
+      n;
+    while ((n = t.exec(e))) {
+      if (n[0].startsWith("\\left")) i.push(n);
+      else if (i.length > 0) r.push([i.pop(), n]);
+    }
+    if (r.length === 0) return e;
+    let s = [];
+    for (let [a, l] of r)
+      for (let o of [a, l]) s.push([o.index, o.index + o[0].length - 1]);
+    s.sort((a, l) => a[0] - l[0]);
+    let c = 0,
+      f = "";
+    for (let [a, l] of s)
+      ((f += e.slice(c, a) + e[l]), (c = l + 1));
+    return f + e.slice(c);
+  }
   function nii(e) {
-    return tii(
+    let t = tii(
       tii(
         e
           .replace(/\\log10(?=\\left\()/g, "lg")
@@ -14737,6 +14752,7 @@ import {
       "\\lceil ",
       " \\rceil",
     );
+    return normalizePsetterScaledParentheses(t);
   }
   function psetterMitxLexicalOverrides() {
     let overrides = new Map(),
@@ -14751,13 +14767,6 @@ import {
   }
   function normalizePsetterConversionContext(e) {
     let lexicalOverrides = psetterMitxLexicalOverrides();
-    if (e instanceof Set)
-      return {
-        aliases: e,
-        functions: new Set(),
-        symbolOverrides: lexicalOverrides,
-        authoritativeSymbols: new Map(),
-      };
     return {
       aliases: e?.aliases instanceof Set ? e.aliases : new Set(),
       functions: e?.functions instanceof Set ? e.functions : new Set(),
@@ -14767,12 +14776,12 @@ import {
           : lexicalOverrides,
       authoritativeSymbols:
         e?.authoritativeSymbols instanceof Map ? e.authoritativeSymbols : new Map(),
-      items: Array.isArray(e?.items) ? e.items : [],
     };
   }
-  function psetterConversionResult(e, t, i, r, n = []) {
+  function psetterConversionResult(e, t, i, r, n = [], syntaxError = !1) {
     let s = r.length > 0 ? "unsupported" : n.length > 0 ? "ambiguous" : "safe";
     return {
+      issueKind: syntaxError ? "syntax" : void 0,
       output: e,
       warnings: Fn(t),
       errors: Fn(r),
@@ -14796,10 +14805,10 @@ import {
       "le", "leq", "ge", "geq", "ne", "neq", "approx",
     ]);
     for (let r of e.matchAll(/\\([A-Za-z]+)/g))
-      if (!i.has(r[1])) return `Unsupported TeX command \\${r[1]}.`;
+      if (!i.has(r[1])) return { kind: "unsupported", message: `Unsupported TeX command \\${r[1]}.` };
     if (/[^\x00-\x7Fα-ωΑ-Ωπ×·−≤≥≠≈]/u.test(e))
-      return "Unsupported Unicode notation.";
-    for (let r of e.matchAll(/(?:\\operatorname\s*\{([A-Za-z][A-Za-z0-9_]*)\}|\b([A-Za-z][A-Za-z0-9_]{1,}))\s*(?:\\left\s*)?\(/g)) {
+      return { kind: "unsupported", message: "Unsupported Unicode notation." };
+    for (let r of e.matchAll(/(?:\\operatorname\s*\{([A-Za-z][A-Za-z0-9_]*)\}|(?<!\\)\b([A-Za-z][A-Za-z0-9_]{1,}))\s*(?:\\left\s*)?\(/g)) {
       let n = r[1] ?? r[2];
       if (
         !t.functions.has(n) &&
@@ -14807,7 +14816,7 @@ import {
         !PSETTER_FUNCTION_NAMES.has(n.toLowerCase()) &&
         !t.aliases.has(n)
       )
-        return `Function-like identifier ${n} has no authoritative semantics.`;
+        return { kind: "ambiguous", message: `Function-like identifier ${n} has no authoritative semantics.` };
     }
     let functionNames = [...PSETTER_FUNCTION_NAMES].sort(
         (left, right) => right.length - left.length,
@@ -14821,7 +14830,7 @@ import {
         "i",
       );
     if (bareFunctionPattern.test(e) || bareAsciiFunctionPattern.test(e))
-      return "A function name is incomplete until it has a parenthesized argument.";
+      return { kind: "incomplete", message: "A function name is incomplete until it has a parenthesized argument." };
     return null;
   }
   function restorePsetterAuthoritativeFunctions(e, t) {
@@ -14905,7 +14914,7 @@ import {
     });
     return { source, symbolOverrides: i };
   }
-  function Rn(e, t, context = new Set()) {
+  function Rn(e, t, context = {}) {
     if (!e.trim())
       return {
         output: "",
@@ -14919,10 +14928,11 @@ import {
       safetyIssue = psetterLatexSafetyIssue(e, semanticContext);
     if (safetyIssue)
       return {
+        issueKind: safetyIssue.kind,
         output: "",
         warnings: [],
         errors: [],
-        safetyReasons: [safetyIssue],
+        safetyReasons: [safetyIssue.message],
         status: "ambiguous",
         isSupported: !1,
       };
@@ -14992,23 +15002,21 @@ import {
           i.push(
             "Subscripted variables require a grader that accepts underscore names.",
           ),
-        psetterConversionResult(s, i, t, r, unsafe)
+        psetterConversionResult(s, i, t, r, unsafe, conversionContext.syntaxError)
       );
     } catch (n) {
       return {
+        issueKind: "runtime",
         output: "",
         warnings: [],
         errors: [
           n instanceof Error ? n.message : "Unable to parse the expression.",
         ],
         safetyReasons: [],
-        status: "parse-error",
+        status: "runtime-error",
         isSupported: !1,
       };
     }
-  }
-  function Nii(e, t, i) {
-    return Rn(Bt(e), t, i);
   }
   function isPsetterDetailsEvent(e) {
     return !!e?.composedPath?.().some(
@@ -15054,7 +15062,7 @@ import {
       .replace(/\s*([()+\-*/^=<>!,_])\s*/g, "$1")
       .trim();
   }
-  function Kii(e, t = "", a = new Set()) {
+  function Kii(e, t = "", a = {}) {
     if (!e.trim()) return "";
     let i = [],
       r = [],
@@ -15099,8 +15107,9 @@ import {
         i = { symbols: new Set(), aliases: new Set(), functions: new Set() };
       collectPsetterNativeSemantics(t, i);
       return { ast: t, latex: Ae(t).latex, ...i };
-    } catch {
-      return null;
+    } catch (error) {
+      if (error instanceof SyntaxError) return null;
+      throw error;
     }
   }
   function canonicalizePsetterNativeAst(e) {
@@ -15443,6 +15452,22 @@ import {
       .replace(/\s+/g, " ")
       .trim();
   }
+  function psetterMathDeclaration(e, selector) {
+    const paragraph = e.closest?.("p, li, dd, dt, figcaption");
+    if (!paragraph) return { declaredVariableList: false, alias: null };
+    const range = document.createRange();
+    range.selectNodeContents(paragraph);
+    range.setEndBefore(e);
+    const before = range.cloneContents();
+    for (const math of before.querySelectorAll(`${selector}, ${psetterContextExcludedSelector}`)) math.remove();
+    const text = before.textContent ?? "";
+    const declaration = /\b(?:in terms of|following(?:\s+variables)?\s*:|(?:use|using)\s+(?:any|some|all)\s+of(?:\s+the)?\s+(?:following\s+)?variables\s*:)/i.exec(text);
+    const declaredVariableList = Boolean(declaration &&
+      !/[.!?;]|\b(?:where|as needed|such that)\b/i.test(text.slice(declaration.index + declaration[0].length)));
+    // Plain aliases such as ", Deltat for <math>" are explicit names too.
+    const alias = text.match(/(?:^|[,;:]|\band\b|\buse\b)\s*([A-Za-z][A-Za-z0-9_]*)\s+(?:for|as)\s*$/i)?.[1] ?? null;
+    return { declaredVariableList, alias };
+  }
   function addPsetterExplicitAliases(e, t, i) {
     for (let r of e.querySelectorAll("p, li, dd, dt, figcaption")) {
       if (!isPsetterContextSourceNode(r, t)) continue;
@@ -15511,16 +15536,30 @@ import {
       if (!isPsetterContextSourceNode(n, e)) continue;
       let s = psetterContextNodeText(n);
       if (isPsetterInstructionalText(s)) continue;
+      // Inspect the outer math surface once. Nested MathML remains available
+      // as structured evidence without turning its accessible label into a name.
+      if (n.parentElement?.closest(r)) continue;
+      const declaration = psetterMathDeclaration(n, r);
+      if (declaration.alias) {
+        const alias = createPsetterContextItem(declaration.alias, {
+          declaredKind: "alias",
+          explicitAlias: true,
+          problemDefined: true,
+          provenance: "explicit-declaration",
+        });
+        if (alias) i.push(alias);
+      }
       let a = n.matches?.("math")
         ? n.outerHTML
         : n.getAttribute("data-psetter-context") ||
           n.getAttribute("data-math") ||
           n.getAttribute("data-mathml") ||
+          n.querySelector?.("math")?.outerHTML ||
           n.getAttribute("alttext") ||
           n.getAttribute("aria-label") ||
           n.textContent ||
           "";
-      i.push(...extractPsetterMathIdentifiers(a));
+      i.push(...extractPsetterMathIdentifiers(a, declaration));
     }
     for (let n of t.querySelectorAll("code")) {
       if (!isPsetterContextSourceNode(n, e)) continue;
@@ -15611,6 +15650,46 @@ import {
       r.setAttribute("aria-label", i),
       r
     );
+  }
+  function createDeveloperMessageChevron(direction, className, label) {
+    const button = Be("", className, label);
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "pset-math-developer-message-chevron");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute(
+      "d",
+      direction === "previous" ? "M14 6 8 12l6 6" : "m10 6 6 6-6 6",
+    );
+    svg.append(path);
+    button.append(svg);
+    return button;
+  }
+  function createDeveloperMessageBell() {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "pset-math-developer-message-bell");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", "M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4");
+    svg.append(path);
+    return svg;
+  }
+  function createDeveloperMessageMinimize(className, label) {
+    const button = Be("", className, label);
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "pset-math-developer-message-minimize");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", "M6 12h12");
+    svg.append(path);
+    button.append(svg);
+    return button;
   }
   function oei(e, t, i, r, n = {}) {
     return {
@@ -15889,7 +15968,17 @@ import {
   function qaWait(e) {
     return new Promise((t) => window.setTimeout(t, e));
   }
+  var psetterSyncHintId = 0;
   var Mt = class {
+    interactionNotice;
+    interactionTimer;
+    interactionFeedbackKey = "";
+    interactionMessage;
+    nativeInputButton;
+    pendingDraft;
+    lastEditorLatex = "";
+    manualNative = !1;
+    failedNativeValue = null;
     trigger;
     input;
     kind;
@@ -16033,6 +16122,36 @@ import {
           this.restoreOriginal();
         }),
         this.trigger.insertAdjacentElement("afterend", this.restoreControl),
+        (this.interactionNotice = R("div", "pset-math-restore-hint pset-math-interaction-notice")),
+        (this.interactionNotice.id = `psetter-sync-hint-${++psetterSyncHintId}`),
+        this.interactionNotice.setAttribute("role", "group"),
+        this.interactionNotice.setAttribute("aria-label", "Answer sync options"),
+        (this.interactionMessage = R("span")),
+        this.interactionMessage.setAttribute("role", "status"),
+        this.interactionMessage.setAttribute("aria-live", "polite"),
+        (this.nativeInputButton = Be("Use standard input", "pset-math-native-entry", "Use standard input")),
+        this.listen(this.nativeInputButton, "click", () => {
+          if (this.manualNative) {
+            this.manualNative = !1;
+            this.enableInline();
+          } else {
+            this.manualNative = !0;
+            this.disableInline();
+            this.input.focus();
+          }
+          this.renderInteractionFeedback();
+        }),
+        this.interactionNotice.append(this.interactionMessage, this.nativeInputButton),
+        (this.interactionNotice.hidden = !0),
+        (document.body ?? document.documentElement).appendChild(this.interactionNotice),
+        this.listen(this.interactionNotice, "keydown", (event) => {
+          if (event.key !== "Escape") return;
+          event.preventDefault();
+          this.hideInteractionHint();
+          this.mathField ? this.focus() : this.input.focus();
+        }),
+        this.listen(window, "resize", () => this.positionInteractionHint()),
+        this.listen(window, "scroll", () => this.positionInteractionHint(), { capture: true, passive: true }),
         (this.restoreHint = R(
           "div",
           "pset-math-restore-hint",
@@ -16049,8 +16168,10 @@ import {
         (this.formSubmitListener = () => {
           if (!this.isCurrent()) return;
           ((this.restoreAvailable = !1), this.renderRestoreControl());
+          this.endNativeInputTurn();
         }),
         this.formElement && this.listen(this.formElement, "submit", this.formSubmitListener),
+        this.formElement && this.listen(this.formElement, "reset", () => this.endNativeInputTurn()),
         this.listen(t, "focus", () => {
           if (!this.isCurrent()) return;
           (this.hooks.requestActivation(this), this.scheduleMathFieldFocus());
@@ -16059,9 +16180,13 @@ import {
         (this.externalInputListener = () => {
           if (!this.isCurrent()) return;
           if (this.writingNative || !this.active) return;
+          if (this.pendingDraft && this.pendingDraft.nativeOutput !== this.input.value) {
+            this.pendingDraft = void 0;
+            this.hooks.clearEditorState?.(this.input);
+          }
           if (!this.mathField) {
             this.draftExpression = this.input.value;
-            this.mountInlineEditor();
+            if (this.inlineEnabled && !this.manualNative) this.mountInlineEditor();
             return;
           }
           this.input.value !== this.lastCommittedOutput &&
@@ -16122,6 +16247,7 @@ import {
         this.trigger,
         this.controls,
         this.editorSurface,
+        this.interactionNotice,
         this.detailsMount,
         this.restoreControl,
       ].some((i) => {
@@ -16168,6 +16294,9 @@ import {
         : ((this.lastCommittedOutput = ""), Bn(this.input, ""));
     }
     typeCharacter(t) {
+      return this.guardEditor(() => this.typeCharacterUnchecked(t));
+    }
+    typeCharacterUnchecked(t) {
       if (!this.isCurrent() || !this.inlineEnabled) return !1;
       this.mathField || this.mountInlineEditor();
       if (!this.mathField) return !1;
@@ -16189,7 +16318,7 @@ import {
       if (this.focusTransferTimer) window.clearTimeout(this.focusTransferTimer);
       this.lifecycleGeneration += 1;
       let t = this.lifecycleGeneration;
-      this.focusTransferTimer = window.setTimeout(() => {
+      this.focusTransferTimer = window.setTimeout(() => this.guardEditor(() => {
         this.focusTransferTimer = void 0;
         if (
           !this.isCurrent() ||
@@ -16204,9 +16333,12 @@ import {
           typeof this.mathField.moveToRightEnd == "function" &&
             this.mathField.moveToRightEnd();
         }
-      }, 0);
+      }), 0);
     }
     handleNativeKeydown(t) {
+      return this.guardEditor(() => this.handleNativeKeydownUnchecked(t));
+    }
+    handleNativeKeydownUnchecked(t) {
       if (!this.isCurrent()) return;
       this.active &&
         this.inlineEnabled &&
@@ -16250,6 +16382,10 @@ import {
         this.scheduleMathFieldFocus());
     }
     mountInlineEditor() {
+      if (this.manualNative || this.failedNativeValue === this.input.value) return;
+      return this.guardEditor(() => this.mountInlineEditorUnchecked());
+    }
+    mountInlineEditorUnchecked() {
       if (this.controls || !this.input.isConnected || !this.isCurrent()) return;
       let t = R("span", "pset-math-takeover"),
         i = R("div", "pset-math-editor-surface"),
@@ -16309,7 +16445,17 @@ import {
           },
         })));
       let n = this.hooks.readEditorState?.(this.input);
-      if (n?.nativeOutput === this.input.value && typeof n.latex === "string") {
+      if (!this.pendingDraft && n?.kind === "draft" && n.nativeOutput === this.input.value)
+        this.pendingDraft = n;
+      if (this.pendingDraft?.nativeOutput === this.input.value) {
+        const draft = this.pendingDraft;
+        this.semanticContext = draft.context;
+        this.hydratingEditor = !0;
+        try { this.mathField.latex(draft.latex); }
+        finally { this.hydratingEditor = !1; }
+        this.editorDirty = !0;
+        this.recompute(!1);
+      } else if (n?.nativeOutput === this.input.value && typeof n.latex === "string") {
         this.hydrateEditorLatex(n.latex, n.nativeOutput);
       } else {
         this.hydrateNativeSource(this.draftExpression || this.input.value);
@@ -16350,17 +16496,23 @@ import {
       this.recompute(!1);
     }
     hydrateNativeSource(t) {
+      return this.guardEditor(() => this.hydrateNativeSourceUnchecked(t));
+    }
+    hydrateNativeSourceUnchecked(t) {
       if (!this.mathField || !this.isCurrent()) return;
       let i = typeof t == "string" ? t : "";
       this.hooks.clearEditorState?.(this.input);
       this.semanticContext = discoverPsetterSemanticContext(this.input);
       let r = preparePsetterNativeHydration(i, this.mode, this.semanticContext);
       if (!r.safe) {
+        if (r.result?.issueKind === "runtime") throw new Error("Native hydration conversion failed.");
+        this.failedNativeValue = i;
         this.hydrationBlocked = !0;
         this.draftExpression = i;
         this.lastCommittedOutput = i;
         this.editorDirty = !1;
         this.lastResult = {
+          issueKind: "native-syntax",
           output: "",
           warnings: [],
           errors: [
@@ -16373,10 +16525,12 @@ import {
           isSupported: !1,
         };
         this.unmountInlineEditor();
+        this.renderInteractionFeedback();
         return;
       }
       this.semanticContext = r.context;
       this.hydrationBlocked = !1;
+      this.failedNativeValue = null;
       this.hydratingEditor = !0;
       try {
         this.mathField.latex(r.latex);
@@ -16389,6 +16543,13 @@ import {
       this.recompute(!1);
     }
     unmountInlineEditor() {
+      if (this.mathField && this.lastResult.status !== "safe") {
+        try {
+          this.pendingDraft = { latex: this.mathField.latex(), nativeOutput: this.input.value,
+            context: this.semanticContext, kind: "draft" };
+          this.hooks.writeEditorState?.(this.input, this.pendingDraft);
+        } catch {}
+      }
       this.lifecycleGeneration += 1;
       this.clearScoped(this.inlineDisposers);
       if (this.focusTransferTimer) window.clearTimeout(this.focusTransferTimer);
@@ -16474,11 +16635,14 @@ import {
       }
     }
     commitNativeValue() {
-      let t = this.getCommittedValue();
-      t.safe && this.writeNativeValue(t.value);
+      return this.guardEditor(() => {
+        let t = this.getCommittedValue();
+        t.safe && this.writeNativeValue(t.value);
+      });
     }
     enableInline() {
       if (!this.isCurrent()) return;
+      if (this.manualNative) return;
       ((this.inlineEnabled = !0),
         this.mountInlineEditor(),
         this.input.classList.add("pset-math-active-field"));
@@ -16506,6 +16670,7 @@ import {
       ((this.trigger.hidden = !this.active || !this.inlineEnabled),
         this.trigger.classList.toggle("is-inline-off", !this.inlineEnabled),
         this.renderRestoreControl());
+      this.renderInteractionFeedback();
     }
     activate() {
       this.isCurrent() &&
@@ -16562,6 +16727,7 @@ import {
         this.hideRestoreHint(),
         this.renderRestoreControl()),
         this.hooks.onControllerStateChanged?.(this));
+      this.renderInteractionFeedback();
     }
     renderRestoreControl() {
       let t =
@@ -16712,6 +16878,7 @@ import {
         this.input.removeAttribute("data-pset-math-enhanced"),
         this.trigger.remove(),
         this.restoreControl?.remove(),
+        this.interactionNotice?.remove(),
         this.restoreHintPositionFrame &&
           window.cancelAnimationFrame(this.restoreHintPositionFrame),
         this.restoreHint?.remove());
@@ -16873,6 +17040,9 @@ import {
       );
     }
     insertSymbol(t) {
+      return this.guardEditor(() => this.insertSymbolUnchecked(t));
+    }
+    insertSymbolUnchecked(t) {
       if (!this.isCurrent() || !this.mathField) return;
       this.clearActivationRestore();
       this.editorDirty = !0;
@@ -16946,10 +17116,15 @@ import {
         this.recompute());
     }
     recompute(t = !0) {
+      return this.guardEditor(() => this.recomputeUnchecked(t));
+    }
+    recomputeUnchecked(t = !0) {
       if (!this.mathField || !this.isCurrent()) return;
       let i = this.mathField.latex(),
         r = this.getDraftValue(i),
         n = Rn(i, this.mode, this.semanticContext);
+      this.lastEditorLatex = i;
+      if (n.issueKind === "runtime") throw new Error("Conversion runtime failed.");
       if (this.activationPending) {
         this.activationBaselineLatex = i;
         this.activationInitialOutput = n.status === "safe" ? n.output : this.input.value;
@@ -16957,6 +17132,8 @@ import {
       ((this.draftExpression = r),
         (this.lastResult = n),
         t && this.editorDirty && n.status === "safe" && this.writeNativeValue(n.output));
+      if (n.status === "safe") this.pendingDraft = void 0;
+      this.renderInteractionFeedback(i);
       this.recordHistoryState(i);
       this.renderRestoreControl();
       (this.queueTermCombinationCount(),
@@ -17020,6 +17197,80 @@ import {
           (r.hidden = n.length === 0));
       };
       (i(this.errorList, t.errors), i(this.warningList, t.warnings));
+    }
+    guardEditor(action) {
+      try { return action(); }
+      catch {
+        // A runtime fault belongs to this editor, not to the student's answer.
+        this.lastResult = { status: "runtime-error", issueKind: "runtime", output: "",
+          errors: [], warnings: [], safetyReasons: [], isSupported: false };
+        this.manualNative = !0;
+        this.unmountInlineEditor();
+        this.input.classList.remove("pset-math-active-field");
+        this.renderInteractionFeedback();
+        this.input.focus({ preventScroll: true });
+        return false;
+      }
+    }
+    hideInteractionHint() {
+      this.interactionNotice.hidden = !0;
+      this.interactionNotice.classList.remove("is-visible");
+    }
+    endNativeInputTurn() {
+      if (!this.manualNative) return;
+      this.manualNative = !1;
+      this.inlineEnabled = this.settings?.inlineEnabledDefault !== false;
+      this.interactionFeedbackKey = "";
+      this.hideInteractionHint();
+      if (this.interactionTimer) window.clearTimeout(this.interactionTimer);
+      this.interactionTimer = void 0;
+      const generation = this.lifecycleGeneration;
+      window.setTimeout(() => {
+        if (!this.isCurrent() || this.lifecycleGeneration !== generation ||
+            !this.active || !this.inlineEnabled) return;
+        this.enableInline();
+        this.renderInteractionFeedback();
+      }, 0);
+    }
+    positionInteractionHint() {
+      if (this.interactionNotice.hidden) return;
+      const anchor = this.input.getBoundingClientRect();
+      this.interactionNotice.style.setProperty("max-width", `${Math.max(240, Math.min(anchor.width, window.innerWidth - 16))}px`, "important");
+      const width = this.interactionNotice.getBoundingClientRect().width;
+      const left = Math.max(8, Math.min(window.innerWidth - width - 8, anchor.left + anchor.width / 2 - width / 2));
+      this.interactionNotice.style.left = `${left}px`;
+      this.interactionNotice.style.top = `${Math.max(8, anchor.top - 8)}px`;
+      this.interactionNotice.style.setProperty("--psetter-hint-arrow-left", `${Math.max(8, Math.min(width - 16, anchor.left + anchor.width / 2 - left - 4))}px`);
+    }
+    showInteractionHint() {
+      if (!this.isCurrent() || !this.active) return;
+      this.interactionNotice.hidden = !1;
+      this.positionInteractionHint();
+      this.interactionNotice.classList.add("is-visible");
+    }
+    renderInteractionFeedback(latex = this.lastEditorLatex) {
+      if (!this.interactionNotice) return;
+      const feedback = psetterInteractionFeedback(this.lastResult, latex);
+      this.interactionNotice.dataset.state = this.manualNative ? "native" : feedback.kind;
+      this.interactionMessage.textContent = this.manualNative
+        ? "You are using standard input."
+        : "This edit has not been applied to your MITx answer.";
+      this.nativeInputButton.textContent = this.manualNative ? "Resume visual editor" : "Use standard input";
+      this.nativeInputButton.setAttribute("aria-label", this.nativeInputButton.textContent);
+      const key = `${this.active}:${this.manualNative}:${feedback.kind}:${latex}`;
+      if (key === this.interactionFeedbackKey) return;
+      this.interactionFeedbackKey = key;
+      if (this.interactionTimer) window.clearTimeout(this.interactionTimer);
+      this.interactionTimer = void 0;
+      this.hideInteractionHint();
+      if (!this.active || this.disposed || !this.manualNative &&
+          ["ready", "incomplete", "native-syntax"].includes(feedback.kind)) return;
+      if (this.manualNative) { this.showInteractionHint(); return; }
+      this.interactionTimer = window.setTimeout(() => {
+        this.interactionTimer = void 0;
+        if (this.isCurrent() && this.active && this.interactionFeedbackKey === key)
+          this.showInteractionHint();
+      }, 1000);
     }
     renderDetailsVisibility() {
       (this.detailsPanel && (this.detailsPanel.hidden = !this.detailsOpen),
@@ -17276,6 +17527,10 @@ import {
     developerMessageButton;
     developerMessagePanel;
     developerMessageProgress;
+    developerMessagePrevious;
+    developerMessageNext;
+    developerMessageDismiss;
+    developerMessageIndex = 0;
     developerMessageReadId = null;
     developerMessageReadIds = [];
     globalNotice;
@@ -17332,6 +17587,7 @@ import {
         ".pset-math-trigger",
         ".pset-math-restore-control",
         ".pset-math-restore-hint",
+        ".pset-math-interaction-notice",
         ".pset-math-details-slot",
       ].join(","))) t.remove();
       for (let t of document.querySelectorAll("[data-pset-math-enhanced]")) {
@@ -17427,11 +17683,41 @@ import {
       const position = messages.findIndex((item) => item.id === message?.id);
       return position < 0 || messages.length < 2 ? "" : `${position + 1} of ${messages.length}`;
     }
+    getCurrentUnreadDeveloperMessage() {
+      const messages = this.getUnreadDeveloperMessages();
+      if (!messages.length) return null;
+      this.developerMessageIndex = Math.max(
+        0,
+        Math.min(this.developerMessageIndex, messages.length - 1),
+      );
+      return messages[this.developerMessageIndex];
+    }
+    renderDeveloperMessagePanel() {
+      if (!this.developerMessagePanel) return;
+      const message = this.getCurrentUnreadDeveloperMessage();
+      if (!message) {
+        this.closeDeveloperMessage();
+        return;
+      }
+      this.developerMessagePanel.querySelector(".pset-math-developer-message-title").textContent =
+        message.title;
+      this.developerMessagePanel.querySelector(".pset-math-developer-message-text").textContent =
+        message.text;
+      const signature = this.developerMessagePanel.querySelector(
+        ".pset-math-developer-message-signature",
+      );
+      signature.textContent = message.signature ?? "";
+      signature.hidden = !message.signature;
+      this.developerMessageProgress.textContent = this.getDeveloperMessagePosition(message);
+      const messages = this.getUnreadDeveloperMessages();
+      this.developerMessagePrevious.disabled = this.developerMessageIndex <= 0;
+      this.developerMessageNext.disabled = this.developerMessageIndex >= messages.length - 1;
+    }
     isDeveloperMessageUnread() {
       return this.getUnreadDeveloperMessages().length > 0;
     }
     openDeveloperMessage() {
-      const message = this.getUnreadDeveloperMessages()[0];
+      const message = this.getCurrentUnreadDeveloperMessage();
       if (!message) return !1;
       if (this.developerMessagePanel) {
         this.developerMessagePanel.querySelector(".pset-math-developer-message-close")?.focus();
@@ -17440,39 +17726,79 @@ import {
       const panel = R("section", "pset-math-developer-message-panel");
       const header = R("div", "pset-math-developer-message-header");
       const headerLogo = R("img", "pset-math-developer-message-header-logo");
-      const headerLabel = R("strong", "pset-math-developer-message-header-label", "Notification");
+      const headerLabel = R("strong", "pset-math-developer-message-header-label", "Notifications");
+      const navigation = R("div", "pset-math-developer-message-navigation");
       const progress = R(
         "span",
         "pset-math-developer-message-progress",
         this.getDeveloperMessagePosition(message),
       );
-      const close = Be("×", "pset-math-developer-message-close", "Dismiss developer message");
+      const previous = createDeveloperMessageChevron(
+        "previous",
+        "pset-math-developer-message-nav",
+        "Previous notification",
+      );
+      const next = createDeveloperMessageChevron(
+        "next",
+        "pset-math-developer-message-nav",
+        "Next notification",
+      );
+      const close = createDeveloperMessageMinimize(
+        "pset-math-developer-message-close",
+        "Minimize notification",
+      );
       const title = R("h2", "pset-math-developer-message-title", message.title);
       const text = R("p", "pset-math-developer-message-text", message.text);
       const signature = R("p", "pset-math-developer-message-signature", message.signature ?? "");
+      const dismiss = Be("Dismiss", "pset-math-developer-message-dismiss", "Dismiss notification");
+      const meta = R("div", "pset-math-developer-message-meta");
       panel.setAttribute("role", "dialog");
       panel.setAttribute("aria-label", "Psetter developer message");
       headerLogo.src = getExtensionUrl("icons/psetter-px-logo-white.svg");
       headerLogo.alt = "P^x";
       signature.hidden = !message.signature;
-      header.append(headerLogo, headerLabel, progress, close);
-      panel.append(header, title, text, signature);
-      const dismissMessage = () => this.dismissDeveloperMessage();
-      close.addEventListener("click", dismissMessage);
+      navigation.setAttribute("role", "group");
+      navigation.setAttribute("aria-label", "Notification navigation");
+      navigation.append(previous, progress, next);
+      header.append(headerLogo, headerLabel, navigation, close);
+      meta.append(signature, dismiss);
+      panel.append(header, title, text, meta);
+      previous.addEventListener("click", () => {
+        this.developerMessageIndex -= 1;
+        this.renderDeveloperMessagePanel();
+        previous.focus();
+      });
+      next.addEventListener("click", () => {
+        this.developerMessageIndex += 1;
+        this.renderDeveloperMessagePanel();
+        next.focus();
+      });
+      close.addEventListener("click", () => this.closeDeveloperMessage());
+      dismiss.addEventListener("click", () => this.dismissDeveloperMessage());
       panel.addEventListener("keydown", (event) => {
         if (event.key === "Escape") {
           event.preventDefault();
           this.closeDeveloperMessage();
+        } else if (event.key === "ArrowLeft") {
+          event.preventDefault();
+          previous.click();
+        } else if (event.key === "ArrowRight") {
+          event.preventDefault();
+          next.click();
         }
       });
       this.developerMessagePanel = panel;
       this.developerMessageProgress = progress;
+      this.developerMessagePrevious = previous;
+      this.developerMessageNext = next;
+      this.developerMessageDismiss = dismiss;
       (document.body ?? document.documentElement).appendChild(panel);
+      this.renderDeveloperMessagePanel();
       close.focus();
       return !0;
     }
     async dismissDeveloperMessage() {
-      const message = this.getUnreadDeveloperMessages()[0];
+      const message = this.getCurrentUnreadDeveloperMessage();
       if (!message || !PSETTER_REMOTE_API?.dismissDeveloperMessage) return !1;
       const saved = await PSETTER_REMOTE_API.dismissDeveloperMessage(message.id);
       if (!saved) return !1;
@@ -17488,6 +17814,9 @@ import {
       this.developerMessagePanel?.remove();
       this.developerMessagePanel = void 0;
       this.developerMessageProgress = void 0;
+      this.developerMessagePrevious = void 0;
+      this.developerMessageNext = void 0;
+      this.developerMessageDismiss = void 0;
     }
     renderDeveloperMessage() {
       if (!this.developerMessageButton) return;
@@ -17498,10 +17827,13 @@ import {
       this.developerMessageButton.setAttribute("aria-hidden", unread ? "false" : "true");
       const label =
         unreadMessages.length > 1
-          ? `Open notifications (${unreadMessages.length} queued)`
-          : "Open developer message";
+          ? `Open Psetter notifications (${unreadMessages.length} unread)`
+          : "Open Psetter notification (1 unread)";
       this.developerMessageButton.title = label;
       this.developerMessageButton.setAttribute("aria-label", label);
+      if (this.developerMessageCount) {
+        this.developerMessageCount.textContent = unreadMessages.length > 9 ? "9+" : String(unreadMessages.length);
+      }
       if (this.developerMessageProgress && message) {
         this.developerMessageProgress.textContent = this.getDeveloperMessagePosition(message);
       }
@@ -17603,6 +17935,8 @@ import {
         const readKey = PSETTER_REMOTE_API?.developerMessageReadKey;
         const readIdsKey = PSETTER_REMOTE_API?.developerMessageReadIdsKey;
         const remoteConfigKey = PSETTER_REMOTE_API?.remoteConfigKey;
+        const developerNotificationTokenKey =
+          PSETTER_REMOTE_API?.developerNotificationTokenKey;
         if (storage?.onChanged && (readKey || readIdsKey)) {
           const onChanged = (changes, areaName) => {
             if (areaName !== "local") return;
@@ -17624,10 +17958,15 @@ import {
           storage.onChanged.addListener(onChanged);
           this.cleanupListeners.push(() => storage.onChanged.removeListener(onChanged));
         }
-        if (storage?.onChanged && remoteConfigKey) {
+        if (storage?.onChanged && (remoteConfigKey || developerNotificationTokenKey)) {
           const onRemoteConfigChanged = async (changes, areaName) => {
-            if (areaName !== "local" || !changes[remoteConfigKey]) return;
-            const nextConfig = await PSETTER_REMOTE_API?.loadCached?.();
+            if (areaName !== "local") return;
+            const tokenChanged =
+              developerNotificationTokenKey && changes[developerNotificationTokenKey];
+            if (!tokenChanged && (!remoteConfigKey || !changes[remoteConfigKey])) return;
+            const nextConfig = tokenChanged
+              ? await PSETTER_REMOTE_API?.load?.({ force: true })
+              : await PSETTER_REMOTE_API?.loadCached?.();
             if (this.isRuntimeOwner() && nextConfig) this.applyRemoteConfig(nextConfig);
           };
           storage.onChanged.addListener(onRemoteConfigChanged);
@@ -17642,10 +17981,11 @@ import {
       this.observer.observe(document.documentElement, {
         childList: !0,
         subtree: !0,
+        attributes: !0,
+        attributeFilter: ["disabled", "readonly", "type"],
       });
       this.listen(document, "focusin", (t) => {
         this.activeController &&
-          !this.activeController.detailsOpen &&
           !this.isGlobalToggleTarget(t.target) &&
           !isPsetterDetailsEvent(t) &&
           !this.activeController.ownsEvent(t) &&
@@ -17662,7 +18002,6 @@ import {
           this.closeDeveloperMessage();
         }
         this.activeController &&
-          !this.activeController.detailsOpen &&
           !this.isGlobalToggleTarget(t.target) &&
           !isPsetterDetailsEvent(t) &&
           !this.activeController.ownsEvent(t) &&
@@ -17830,10 +18169,10 @@ import {
             (n.preventDefault(), this.toggleEnabled());
         }),
         (this.globalToggle = t));
-      const messageButton = Be("", "pset-math-developer-message-button", "Open developer message");
-      const messageDot = R("span", "pset-math-developer-message-dot");
-      messageDot.setAttribute("aria-hidden", "true");
-      messageButton.appendChild(messageDot);
+      const messageButton = Be("", "pset-math-developer-message-button", "Open Psetter notifications");
+      const messageCount = R("span", "pset-math-developer-message-count");
+      messageCount.setAttribute("aria-hidden", "true");
+      messageButton.append(createDeveloperMessageBell(), messageCount);
       messageButton.hidden = true;
       messageButton.addEventListener("pointerdown", (n) => {
         n.preventDefault();
@@ -17845,6 +18184,7 @@ import {
         this.openDeveloperMessage();
       });
       this.developerMessageButton = messageButton;
+      this.developerMessageCount = messageCount;
       this.globalControls = R("div", "pset-math-global-controls");
       this.globalControls.append(t, messageButton);
       (document.body ?? document.documentElement).appendChild(this.globalControls);
@@ -17971,13 +18311,16 @@ import {
           return !1;
         return n.matches?.(i) || n.querySelector?.(i);
       };
-      return t.some((n) => [...n.addedNodes, ...n.removedNodes].some(r));
+      return t.some((n) => n.type === "attributes"
+        ? n.target?.matches?.("input") &&
+          (this.controllers.has(n.target) || n.target.matches(psetterNativeAnswerSelector))
+        : [...n.addedNodes, ...n.removedNodes].some(r));
     }
     scan() {
       if (this.isRuntimeOwner() && this.settings?.enabled && !this.remoteConfig.disabled) {
         this.scanCount += 1;
         for (let [t, i] of this.controllers)
-          (!t.isConnected ||
+          (!t.isConnected || !psetterInputIsEditable(t) ||
             !i.trigger?.isConnected ||
             (i.controls && (!i.controls.isConnected || !i.controls.contains(t)))) &&
             (i === this.activeController && (this.activeController = void 0),

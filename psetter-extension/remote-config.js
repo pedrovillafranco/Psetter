@@ -18,6 +18,10 @@
   const DEVELOPER_MESSAGE_TEXT_MAX_LENGTH = 1000;
   const DEVELOPER_MESSAGE_SIGNATURE_MAX_LENGTH = 120;
   const DEVELOPER_MESSAGE_READ_IDS_MAX_COUNT = 100;
+  // This local-only secret is absent by default and is never embedded in a build.
+  // Its presence opts this installation into the Worker’s developer audience.
+  const DEVELOPER_NOTIFICATION_TOKEN_KEY =
+    CONFIG.developerNotificationTokenKey ?? "psetterDeveloperNotificationToken";
   const DEVELOPER_MESSAGE_READ_KEY =
     CONFIG.developerMessageReadKey ?? "psetterDeveloperMessageReadId";
   const DEVELOPER_MESSAGE_READ_IDS_KEY =
@@ -120,7 +124,7 @@
     return value === null || /^(?:0|[1-9]\d{0,3})(?:\.(?:0|[1-9]\d{0,3})){2,3}$/.test(value);
   }
 
-  function validate(value) {
+  function validate(value, options = {}) {
     if (!value || typeof value !== "object" || Array.isArray(value)) return null;
     const allowedTopLevel = new Set([
       "schemaVersion",
@@ -148,10 +152,16 @@
     if (hasDeveloperMessages) {
       // Avoid two competing sources of truth. The normalized result still
       // exposes developerMessage as the first queued item for older callers.
-      if (value.developerMessage !== undefined) return null;
+      if (value.developerMessage !== undefined && !options.allowNormalizedDeveloperMessage) {
+        return null;
+      }
       developerMessages = validateDeveloperMessages(value.developerMessages);
       if (developerMessages === null) return null;
       developerMessage = developerMessages[0] ?? null;
+      if (value.developerMessage !== undefined) {
+        const normalizedLegacyMessage = validateDeveloperMessage(value.developerMessage);
+        if (JSON.stringify(normalizedLegacyMessage) !== JSON.stringify(developerMessage)) return null;
+      }
     } else {
       developerMessage = validateDeveloperMessage(value.developerMessage);
       if (
@@ -209,25 +219,47 @@
     }
   }
 
-  async function readCache() {
+  async function readDeveloperNotificationToken() {
     try {
       const storage = getExtensionApi()?.storage?.local;
       if (!storage?.get) return null;
-      const result = await storage.get(CACHE_KEY);
-      const cached = result?.[CACHE_KEY];
-      const config = validate(cached?.config);
-      const fetchedAt = cached?.fetchedAt;
-      if (!config || !Number.isFinite(fetchedAt) || fetchedAt <= 0) return null;
-      return { config, fetchedAt };
+      const result = await storage.get(DEVELOPER_NOTIFICATION_TOKEN_KEY);
+      const token = result?.[DEVELOPER_NOTIFICATION_TOKEN_KEY];
+      return typeof token === "string" && /^[A-Za-z0-9_-]{32,256}$/.test(token)
+        ? token
+        : null;
     } catch {
       return null;
     }
   }
 
-  async function writeCache(config, fetchedAt) {
+  async function readCache(audience) {
     try {
       const storage = getExtensionApi()?.storage?.local;
-      if (storage?.set) await storage.set({ [CACHE_KEY]: { config, fetchedAt } });
+      if (!storage?.get) return null;
+      const result = await storage.get(CACHE_KEY);
+      const cached = result?.[CACHE_KEY];
+      const config = validate(cached?.config, { allowNormalizedDeveloperMessage: true });
+      const fetchedAt = cached?.fetchedAt;
+      const cachedAudience = cached?.audience === "developer" ? "developer" : "everyone";
+      if (
+        !config ||
+        !Number.isFinite(fetchedAt) ||
+        fetchedAt <= 0 ||
+        cachedAudience !== audience
+      ) {
+        return null;
+      }
+      return { config, fetchedAt, audience: cachedAudience };
+    } catch {
+      return null;
+    }
+  }
+
+  async function writeCache(config, fetchedAt, audience) {
+    try {
+      const storage = getExtensionApi()?.storage?.local;
+      if (storage?.set) await storage.set({ [CACHE_KEY]: { config, fetchedAt, audience } });
     } catch {}
   }
 
@@ -297,7 +329,7 @@
     return Boolean(message && isDeveloperMessageId(message.id) && !readIds.includes(message.id));
   }
 
-  async function fetchConfig() {
+  async function fetchConfig(developerNotificationToken = null) {
     if (!CONFIG_URL) return null;
     const controller = new AbortController();
     const timeout = globalThis.setTimeout(() => controller.abort(), 3000);
@@ -307,6 +339,9 @@
         credentials: "omit",
         redirect: "error",
         signal: controller.signal,
+        ...(developerNotificationToken
+          ? { headers: { Authorization: `Bearer ${developerNotificationToken}` } }
+          : {}),
       });
       if (!response.ok) return null;
       const contentType = response.headers.get("Content-Type") ?? "";
@@ -349,10 +384,12 @@
     }
   }
 
-  let pendingLoad;
+  const pendingLoads = new Map();
   async function loadCached() {
     if (!REMOTE_CONFIG_ENABLED) return DEFAULT_CONFIG;
-    const cached = await readCache();
+    const token = await readDeveloperNotificationToken();
+    const audience = token ? "developer" : "everyone";
+    const cached = await readCache(audience);
     return cached && (cached.config.disabled || Date.now() - cached.fetchedAt < CACHE_TTL_MS)
       ? cached.config
       : DEFAULT_CONFIG;
@@ -360,26 +397,30 @@
 
   async function load(options = {}) {
     if (!REMOTE_CONFIG_ENABLED) return DEFAULT_CONFIG;
+    const developerNotificationToken = await readDeveloperNotificationToken();
+    const audience = developerNotificationToken ? "developer" : "everyone";
+    const pendingLoad = pendingLoads.get(audience);
     if (pendingLoad) return pendingLoad;
-    pendingLoad = (async () => {
+    const nextLoad = (async () => {
       const now = Date.now();
-      const cached = await readCache();
+      const cached = await readCache(audience);
       if (!options.force && cached && now - cached.fetchedAt < CACHE_TTL_MS) {
         return cached.config;
       }
-      const remote = await fetchConfig();
+      const remote = await fetchConfig(developerNotificationToken);
       if (remote) {
-        await writeCache(remote, now);
+        await writeCache(remote, now, audience);
         return remote;
       }
       return cached && (cached.config.disabled || now - cached.fetchedAt < CACHE_TTL_MS)
         ? cached.config
         : DEFAULT_CONFIG;
     })();
+    pendingLoads.set(audience, nextLoad);
     try {
-      return await pendingLoad;
+      return await nextLoad;
     } finally {
-      pendingLoad = null;
+      if (pendingLoads.get(audience) === nextLoad) pendingLoads.delete(audience);
     }
   }
 
@@ -387,6 +428,8 @@
     defaults: DEFAULT_CONFIG,
     validate,
     remoteConfigKey: CACHE_KEY,
+    developerNotificationTokenKey: DEVELOPER_NOTIFICATION_TOKEN_KEY,
+    readDeveloperNotificationToken,
     developerMessageReadKey: DEVELOPER_MESSAGE_READ_KEY,
     developerMessageReadIdsKey: DEVELOPER_MESSAGE_READ_IDS_KEY,
     normalizeDeveloperMessageReadId,

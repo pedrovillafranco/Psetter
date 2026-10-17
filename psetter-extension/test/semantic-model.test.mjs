@@ -303,3 +303,21 @@ test("generated identifier classes normalize typography without joining invisibl
   for (const name of greek)
     assert.equal(classifyPsetterIdentifier(name)?.semanticKind, "greek", name);
 });
+
+
+test("variable-list evidence can name adjacent letters without redefining ordinary products", () => {
+  for (const source of ["dt", "d t", String.raw`\mathrm{dt}`, "<math><mrow><mi>d</mi><mi>t</mi></mrow></math>"]) {
+    const declared = extractPsetterMathIdentifiers(source, { declaredVariableList: true });
+    assert.equal(declared.length, 1, source);
+    assert.equal(declared[0].outputName, "dt", source);
+    assert.equal(declared[0].semanticKind, "alias", source);
+  }
+  for (const source of ["dt", "d t", "dt+dx", "d*t", "sin", "alpha", "pi"]) {
+    const ordinary = extractPsetterMathIdentifiers(source);
+    assert.equal(ordinary.some((item) => item.outputName === "dt" && item.semanticKind === "alias"), false, source);
+  }
+  for (const source of ["d*t", "d+t", "sin", "alpha", "pi", "<math><mi>d</mi><mo>+</mo><mi>t</mi></math>"]) {
+    const declared = extractPsetterMathIdentifiers(source, { declaredVariableList: true });
+    assert.equal(declared.some((item) => item.semanticKind === "alias" && item.outputName === "dt"), false, source);
+  }
+});

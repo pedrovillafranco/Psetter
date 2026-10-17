@@ -29,7 +29,7 @@ test("community packaging performs a ZIP-level boundary scan", async () => {
   const packageScript = await readFile(path.join(extensionDir, "scripts", "package.mjs"), "utf8");
   assert.match(packageScript, /assertPublicZip\(archive,\s*["']community ZIP/);
   const manifest = JSON.parse(await readFile(path.join(extensionDir, "manifest.json"), "utf8"));
-  const archive = path.join(rootDir, "dist", artifactFileName(manifest.version, "community"));
+  const archive = path.join(rootDir, "dist", "staging", artifactFileName(manifest.version, "community"));
   if (existsSync(archive)) await assertPublicZip(archive, "community ZIP");
 });
 

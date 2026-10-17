@@ -250,6 +250,16 @@ p {
   line-height: 1.25;
   text-align: left;
 }
+.developer-message-navigation {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 2px;
+  border: 1px solid rgb(255 255 255 / 30%);
+  border-radius: 999px;
+  background: rgb(0 0 0 / 8%);
+}
 .developer-message-progress {
   flex: 0 0 auto;
   color: rgb(255 255 255 / 82%);
@@ -257,6 +267,50 @@ p {
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;
+}
+.developer-message-nav {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #fff;
+  font: 700 16px/1 Arial, sans-serif;
+  cursor: pointer;
+}
+.developer-message-nav:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.developer-message-nav:not(:disabled):hover,
+.developer-message-nav:not(:disabled):focus-visible {
+  background: transparent;
+  outline: none;
+}
+.developer-message-nav:not(:disabled):focus-visible {
+  outline: 2px solid rgb(255 255 255 / 55%);
+  outline-offset: 3px;
+  border-radius: 50%;
+}
+.developer-message-chevron {
+  display: block;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.developer-message-navigation .developer-message-progress {
+  min-width: 30px;
+  text-align: center;
 }
 .developer-message-header-logo {
   display: block;
@@ -280,12 +334,22 @@ p {
   font: 500 28px/1 Arial, sans-serif;
   line-height: 1;
   cursor: pointer;
-  margin-left: auto;
+  margin-left: 0;
 }
 .developer-message-close:hover,
 .developer-message-close:focus-visible {
   color: #fff;
   outline: 2px solid var(--psetter-accent-soft);
+}
+.developer-message-minimize {
+  display: block;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.8;
+  stroke-linecap: round;
+  pointer-events: none;
 }
 .developer-message-panel h2 {
   margin: 14px 12px 0;
@@ -324,10 +388,47 @@ p {
   line-height: 1.45;
   white-space: pre-wrap;
 }
+.developer-message-panel .developer-message-text {
+  padding-right: 0;
+}
 .developer-message-panel .developer-message-signature {
-  margin: 9px 12px 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding-right: 0;
   color: var(--psetter-text);
   font-weight: 700;
+}
+.developer-message-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  margin: 12px 12px 0;
+}
+.developer-message-actions {
+  display: block;
+  flex: 0 0 auto;
+  margin: 0;
+}
+.developer-message-dismiss {
+  appearance: none;
+  display: block;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--psetter-accent);
+  color: #fff;
+  font: 600 11px/1.2 Inter, Arial, sans-serif;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgb(15 23 42 / 16%);
+}
+.developer-message-dismiss:hover,
+.developer-message-dismiss:focus-visible {
+  background: var(--psetter-accent-deep);
+  color: #fff;
+  outline: 2px solid rgb(232 12 12 / 35%);
+  outline-offset: 2px;
 }
 .developer-message-notice[hidden],
 .developer-message-panel[hidden] {

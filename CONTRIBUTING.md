@@ -16,6 +16,10 @@ Before opening a pull request:
 
 Distributed forks must be rebranded according to [`TRADEMARKS.md`](TRADEMARKS.md).
 
+For editor bugs, follow [`docs/INTERACTION_TESTING.md`](docs/INTERACTION_TESTING.md).
+Run `corepack pnpm test:interactions` to check typing, native answer preservation,
+and editor lifecycle behavior with reproducible generated expressions.
+
 Please keep comments and documentation focused on the code, its behavior, and
 publicly reviewable design decisions. Do not include private correspondence,
 credentials, real coursework answers, or personal information.

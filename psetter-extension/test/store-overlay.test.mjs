@@ -1,18 +1,34 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import test from "node:test";
+import { JSDOM } from "jsdom";
 import { assertStoreZip } from "../scripts/check-boundary.mjs";
 import { artifactFileName } from "../scripts/release-provenance.mjs";
 import { loadStoreOverlay } from "../scripts/store-overlay.mjs";
 
 const extensionDir = fileURLToPath(new URL("../", import.meta.url));
-const rootDir = path.resolve(extensionDir, "..");
 const packageScript = path.join(extensionDir, "scripts", "package.mjs");
 const version = JSON.parse(await readFile(path.join(extensionDir, "package.json"), "utf8")).version;
+
+async function assertPageConnections(packageDir, expectedSources) {
+  for (const name of ["popup.html", "demo.html"]) {
+    const dom = new JSDOM(await readFile(path.join(packageDir, name), "utf8"));
+    try {
+      const policy = dom.window.document.querySelector('meta[http-equiv="Content-Security-Policy"]').content;
+      const directives = policy.split(";").map((value) => value.trim().split(/\s+/));
+      assert.deepEqual(directives.filter(([name]) => name === "connect-src"), [
+        ["connect-src", ...expectedSources],
+      ], `${name}: allow exactly the configured connection sources`);
+      for (const directive of ["default-src", "script-src"])
+        assert.deepEqual(directives.find(([name]) => name === directive), [directive, "'self'"]);
+      assert.deepEqual(directives.find(([name]) => name === "object-src"), ["object-src", "'none'"]);
+    } finally { dom.window.close(); }
+  }
+}
 
 async function createOverlay() {
   const directory = await mkdtemp(path.join(tmpdir(), "psetter-store-overlay-"));
@@ -48,6 +64,7 @@ async function createOverlay() {
 
 test("Store overlay validation and packaging are explicit and isolated", async () => {
   const overlayDir = await createOverlay();
+  const outputDir = await mkdtemp(path.join(tmpdir(), "psetter-store-package-output-"));
   try {
     const overlay = await loadStoreOverlay(overlayDir);
     assert.equal(overlay.feedbackOrigin, "https://store.example.invalid");
@@ -55,14 +72,25 @@ test("Store overlay validation and packaging are explicit and isolated", async (
     for (const browser of ["chrome", "firefox"]) {
       const result = spawnSync(
         process.execPath,
-        [packageScript, "--channel", "store", "--browser", browser, "--store-overlay", overlayDir],
+        [
+          packageScript,
+          "--channel",
+          "store",
+          "--browser",
+          browser,
+          "--store-overlay",
+          overlayDir,
+          "--output-dir",
+          outputDir,
+        ],
         { cwd: extensionDir, encoding: "utf8" },
       );
       assert.equal(result.status, 0, `${browser}: ${result.stdout}\n${result.stderr}`);
-      const artifact = path.join(rootDir, "dist", artifactFileName(version, "store", browser));
+      const artifact = path.join(outputDir, artifactFileName(version, "store", browser));
       await assertStoreZip(artifact, `Store ${browser} ZIP`, browser);
       const packageName = browser === "chrome" ? "psetter-store" : `psetter-${browser}-store`;
-      const content = await readFile(path.join(rootDir, "dist", packageName, "content.js"), "utf8");
+      await assertPageConnections(path.join(outputDir, packageName), ["'self'", overlay.feedbackOrigin]);
+      const content = await readFile(path.join(outputDir, packageName, "content.js"), "utf8");
       const embeddedConfig = content.match(
         /globalThis\.__psetterConfig\s*=\s*Object\.freeze\(\{([\s\S]*?)\}\)/u,
       );
@@ -81,7 +109,21 @@ test("Store overlay validation and packaging are explicit and isolated", async (
     assert.match(`${wrongChannel.stdout}\n${wrongChannel.stderr}`, /only be used with --channel store/);
   } finally {
     await rm(overlayDir, { recursive: true, force: true });
+    await rm(outputDir, { recursive: true, force: true });
   }
+});
+
+test("community pages keep local-only connections after packaging", async () => {
+  const outputDir = await mkdtemp(path.join(tmpdir(), "psetter-community-policy-"));
+  try {
+    for (const browser of ["chrome", "firefox"]) {
+      const result = spawnSync(process.execPath, [packageScript, "--channel", "community",
+        "--browser", browser, "--output-dir", outputDir], { cwd: extensionDir, encoding: "utf8" });
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      const packageName = browser === "chrome" ? "psetter-community" : "psetter-firefox-community";
+      await assertPageConnections(path.join(outputDir, packageName), ["'self'"]);
+    }
+  } finally { await rm(outputDir, { recursive: true, force: true }); }
 });
 
 test("Store packaging rejects incomplete overlay directories", async () => {
@@ -90,6 +132,38 @@ test("Store packaging rejects incomplete overlay directories", async () => {
     await writeFile(path.join(overlayDir, "runtime-config.js"), "{}");
     await assert.rejects(() => loadStoreOverlay(overlayDir), /missing feedback-host/);
   } finally {
+    await rm(overlayDir, { recursive: true, force: true });
+  }
+});
+
+test("normal Store builds produce only stable unpacked browser directories", async () => {
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), "psetter-store-build-fixture-"));
+  const overlayDir = await createOverlay();
+  try {
+    const fixtureExtension = path.join(fixtureRoot, "psetter-extension");
+    await cp(extensionDir, fixtureExtension, {
+      recursive: true,
+      filter: (source) => !["node_modules", "test"].includes(path.basename(source)),
+    });
+    await cp(path.resolve(extensionDir, "..", "package.json"), path.join(fixtureRoot, "package.json"));
+    await symlink(path.join(extensionDir, "node_modules"), path.join(fixtureExtension, "node_modules"), "dir");
+    for (const browser of ["chrome", "firefox"]) {
+      const result = spawnSync(process.execPath, [
+        path.join(fixtureExtension, "scripts", "package.mjs"),
+        "--channel", "store", "--browser", browser, "--store-overlay", overlayDir,
+      ], { cwd: fixtureExtension, encoding: "utf8" });
+      assert.equal(result.status, 0, `${browser}: ${result.stdout}\n${result.stderr}`);
+      assert.match(result.stdout, /Built unpacked Store extension/);
+      const packageName = browser === "chrome" ? "psetter-store" : "psetter-firefox-store";
+      const manifest = JSON.parse(await readFile(path.join(fixtureRoot, "dist", packageName, "manifest.json"), "utf8"));
+      assert.equal(manifest.version, version);
+      assert.ok((await readdir(path.join(fixtureRoot, "dist", packageName))).includes("feedback-host.html"));
+    }
+    assert.deepEqual((await readdir(path.join(fixtureRoot, "dist"))).sort(), [
+      "psetter-firefox-store", "psetter-store",
+    ], "normal builds create no ZIP, staging, or intermediate build folders");
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
     await rm(overlayDir, { recursive: true, force: true });
   }
 });

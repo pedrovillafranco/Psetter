@@ -23,6 +23,8 @@ const manifest = JSON.parse(await readFile(path.join(extensionDir, "manifest.jso
 const defaultStatePath = path.join(
   rootDir,
   "dist",
+  "releases",
+  `v${manifest.version}`,
   `${artifactFileName(manifest.version, channel, browser).replace(/\.zip$/u, "")}.candidate.json`,
 );
 const statePath = readArgument(argv, "--candidate-state") ?? defaultStatePath;

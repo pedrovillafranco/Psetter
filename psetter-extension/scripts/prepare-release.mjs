@@ -1,4 +1,4 @@
-import { readFile, readdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -26,7 +26,7 @@ const expectedTag = `v${manifest.version}`;
 const artifact = artifactFileName(manifest.version, channel, browser);
 const candidateStatePath =
   readArgument(argv, "--candidate-state") ??
-  path.join(rootDir, "dist", `${artifact.replace(/\.zip$/u, "")}.candidate.json`);
+  path.join(rootDir, "dist", "releases", `v${manifest.version}`, `${artifact.replace(/\.zip$/u, "")}.candidate.json`);
 const overlayCommit = channel === "store" ? readArgument(argv, "--overlay-commit", { required: true }) : null;
 const storeOverlayPath = readArgument(argv, "--store-overlay");
 if (channel === "store" && storeOverlayPath === null) {
@@ -97,7 +97,7 @@ if (git("status", "--porcelain")) {
   throw new Error("The reproducible build changed tracked files; commit generated output first.");
 }
 
-const artifactPath = path.join(rootDir, "dist", artifact);
+const artifactPath = path.join(rootDir, "dist", "staging", artifact);
 const build = createBuildIdentity({
   version: manifest.version,
   channel,
@@ -120,7 +120,10 @@ const releaseRecord = createReleaseRecord({
   publicTag: expectedTag,
   runtime: candidate.runtime,
 });
-const recordPath = path.join(rootDir, "dist", `${artifact.replace(/\.zip$/u, "")}.release.json`);
+const releaseDir = path.join(rootDir, "dist", "releases", `v${manifest.version}`);
+const recordPath = path.join(releaseDir, `${artifact.replace(/\.zip$/u, "")}.release.json`);
+await mkdir(releaseDir, { recursive: true });
+await copyFile(artifactPath, path.join(releaseDir, artifact));
 await writeFile(recordPath, `${JSON.stringify(releaseRecord, null, 2)}\n`, "utf8");
 if (git("status", "--porcelain")) {
   throw new Error("Release preparation wrote tracked changes; inspect the worktree before release.");

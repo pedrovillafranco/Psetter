@@ -1,9 +1,10 @@
 {
   "name": "psetter",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "packageManager": "pnpm@11.19.0",
   "scripts": {
+    "test:interactions": "node --test psetter-extension/test/runtime-regressions.test.mjs psetter-extension/test/semantic-model.test.mjs psetter-extension/test/interaction-policy.test.mjs",
     "extension:check": "pnpm --filter @psetter/extension check",
     "extension:build": "pnpm --filter @psetter/extension build",
     "extension:package": "pnpm --filter @psetter/extension package",

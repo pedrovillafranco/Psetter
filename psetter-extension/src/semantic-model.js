@@ -442,8 +442,39 @@ export function isPsetterInstructionalText(text) {
   ].some((pattern) => pattern.test(normalized));
 }
 
-export function extractPsetterMathIdentifiers(source) {
+function psetterDeclaredMathName(source) {
+  // A variable-list declaration can give adjacent rendered letters one name.
+  // Outside that declaration, adjacency must retain its usual ambiguity.
+  let name = normalizePsetterMathText(source).trim();
+  if (/^<math\b/i.test(name)) {
+    name = name
+      .replace(/<annotation(?:-xml)?\b[^>]*>[\s\S]*?<\/annotation(?:-xml)?>/gi, "")
+      .replace(/<\/?(?:math|semantics|mrow|mstyle)\b[^>]*>/gi, "")
+      .replace(/<mi\b[^>]*>\s*([A-Za-z]+)\s*<\/mi>/gi, "$1");
+  }
+  name = name.replace(/^\\(?:mathrm|mathbf|mathit|mathsf|mathtt)\s*\{([A-Za-z]+)\}$/, "$1");
+  if (/^[A-Za-z](?:\s+[A-Za-z])+$/.test(name)) name = name.replace(/\s/g, "");
+  if (!/^[A-Za-z]{2,}$/.test(name)) return null;
+  if (PSETTER_FUNCTION_NAMES.has(name.toLowerCase()) ||
+      PSETTER_GREEK.has(name) || PSETTER_GREEK.has(name.toLowerCase()) ||
+      CONSTANTS.has(name)) return null;
+  return name;
+}
+
+export function extractPsetterMathIdentifiers(source, options = {}) {
   if (typeof source !== "string" || !source.trim()) return [];
+  const declaredName = options.declaredVariableList ? psetterDeclaredMathName(source) : null;
+  if (declaredName) {
+    const item = createPsetterContextItem(declaredName, {
+      declaredKind: "alias",
+      explicitAlias: true,
+      problemDefined: true,
+      provenance: "explicit-declaration",
+      sourceRepresentation: source,
+      normalization: "declared-variable-list",
+    });
+    if (item) return [item];
+  }
   const tokens = [];
   const add = (value, options = {}) => {
     const item = createPsetterContextItem(value, {
