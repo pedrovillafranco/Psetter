@@ -295,6 +295,94 @@ test("MathQuill typed vector aliases stay contiguous in implicit products", asyn
   }
 });
 
+test("typed sqrt creates a radical and preserves implicit multiplication", async () => {
+  const { dom, window } = await createRuntime(problem("typed_root", "<p>Enter an expression.</p>"));
+  try {
+    const input = window.document.querySelector("#input_typed_root");
+    const controller = window.__psetterRuntime.controllers.get(input);
+    controller.activate();
+    for (const character of "4sqrt21") controller.typeCharacter(character);
+    assert.match(controller.mathField.latex(), /\\sqrt\{21\}/);
+    assert.equal(input.value, "4*sqrt(21)");
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("unit names declared in prose are preserved", async () => {
+  const { dom, window } = await createRuntime(problem("units", "<p>Express your answer in terms of rad for radians, s for seconds, kg for kilograms, m for meters.</p>"));
+  try {
+    const input = window.document.querySelector("#input_units");
+    const controller = window.__psetterRuntime.controllers.get(input);
+    controller.activate();
+    for (const character of "rad") controller.typeCharacter(character);
+    assert.equal(input.value, "rad");
+    controller.clearExpression();
+    for (const character of "kg") controller.typeCharacter(character);
+    assert.equal(input.value, "kg");
+    controller.clearExpression();
+    for (const character of "rad") controller.typeCharacter(character);
+    controller.typeCharacter("^");
+    controller.typeCharacter("2");
+    controller.mathField.keystroke("Right");
+    controller.typeCharacter("/");
+    controller.typeCharacter("s");
+    controller.typeCharacter("^");
+    controller.typeCharacter("2");
+    controller.mathField.keystroke("Right Right");
+    for (const character of "kg") controller.typeCharacter(character);
+    assert.equal(controller.nativeEquivalentForQa("rad^2/s^2*kg"), true, input.value);
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("typed function arguments retain explicit grouping", async () => {
+  const { dom, window } = await createRuntime(problem("grouped_trig", "<p>Enter an expression.</p>"));
+  try {
+    const input = window.document.querySelector("#input_grouped_trig");
+    const controller = window.__psetterRuntime.controllers.get(input);
+    controller.activate();
+    for (const character of "sin(alpha+beta)") controller.typeCharacter(character);
+    assert.equal(input.value, "sin(alpha+beta)");
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("adjacent factors and script navigation serialize without merging identifiers", async () => {
+  const { dom, window } = await createRuntime(problem("products", '<p>Use <span role="math" aria-label="m"></span>, <span role="math" aria-label="v"></span>, <span role="math" aria-label="U_0"></span>, and <span role="math" aria-label="omega_0"></span>.</p>'));
+  try {
+    const input = window.document.querySelector("#input_products");
+    const controller = window.__psetterRuntime.controllers.get(input);
+    controller.activate();
+    for (const character of "-48mv") controller.typeCharacter(character);
+    controller.typeCharacter("^");
+    controller.typeCharacter("2");
+    assert.equal(input.value, "-48*m*v^2");
+    controller.clearExpression();
+    for (const character of "U_0") controller.typeCharacter(character);
+    controller.mathField.keystroke("Right");
+    controller.typeCharacter("2");
+    controller.typeCharacter("x");
+    assert.equal(input.value, "U_0*2*x", controller.mathField.latex());
+    controller.clearExpression();
+    for (const character of "U_02") controller.typeCharacter(character);
+    assert.equal(input.value, "U_02", "digits still inside the subscript stay together");
+    controller.clearExpression();
+    for (const character of "omega_0") controller.typeCharacter(character);
+    controller.mathField.keystroke("Right");
+    controller.typeCharacter("t");
+    assert.equal(input.value, "omega_0*t");
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
 test("the Latin o variable is not serialized as parser Omicron", async () => {
   const { dom, window } = await createRuntime(problem("latin_o", "<p>Use the variable o.</p>"));
   try {
@@ -482,6 +570,68 @@ test("question aliases containing operator names remain editable in native answe
         `${id}: edit preserves native semantics; actual ${input.value}`,
       );
     }
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("existing cat sled and train answers hydrate and remain editable", async () => {
+  const cases = [
+    ["cat_a", "m_c*u*cos(theta)/(m_s+m_c)", ["m_c", "m_s", "u", "theta"]],
+    ["cat_b", "((m_s+m_c)/(m_s))*tan(theta)", ["m_c", "m_s", "theta"]],
+    ["train_a", "N*m*(u/(m_t+N*m))", ["m_t", "N", "m", "u"]],
+    ["train_b", "m*(u/(m_t+k*m))", ["m_t", "N", "m", "u", "k"]],
+  ];
+  const { dom, window } = await createRuntime(cases.map(([id, value, symbols]) =>
+    problem(id, `<p>Express your answer using some or all of the following: ${symbols.map((s) => `<code>${s}</code>`).join(", ")}.</p>`, value)).join(""));
+  try {
+    for (const [id, original] of cases) {
+      const input = window.document.querySelector(`#input_${id}`);
+      const controller = window.__psetterRuntime.controllers.get(input);
+      controller.activate();
+      assert.ok(controller.mathField, `${id} should open`);
+      assert.equal(input.value, original, `${id} hydration preserves the answer`);
+      controller.mathField.moveToRightEnd();
+      controller.typeCharacter("+");
+      controller.typeCharacter("1");
+      assert.equal(controller.lastResult.status, "safe", `${id}: ${controller.lastResult.errors}`);
+      assert.equal(controller.nativeEquivalentForQa(`${original}+1`), true, `${id}: ${input.value}`);
+    }
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("rail car answer opens from the MITx variable-list prompt", async () => {
+  const prompt = `<p><span role="math" aria-label="N"></span> people, each of mass <span role="math" aria-label="m"></span>, stand on a railway car of mass <span role="math" aria-label="m_t"></span>. They jump off with speed <span role="math" aria-label="u"></span>.</p>
+    <p>Express your answer using some or all of the following: <code>m_t</code> for <span role="math" aria-label="m_t"></span>, <span role="math" aria-label="N"></span>, <span role="math" aria-label="m"></span>, and <span role="math" aria-label="u"></span>.</p>`;
+  const source = "N*m*(u/(m_t+N*m))";
+  const { dom, window } = await createRuntime(problem("rail_car", prompt, source));
+  try {
+    const input = window.document.querySelector("#input_rail_car");
+    const controller = window.__psetterRuntime.controllers.get(input);
+    controller.activate();
+    assert.ok(controller.mathField, controller.lastResult.errors.join(" | "));
+    assert.equal(input.value, source);
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("astronaut answer with indexed variables opens from MITx declarations", async () => {
+  const prompt = `<p>Express your answer in terms of some or all of the following: <span role="math" aria-label="m"></span>, <code>m_1</code> for <span role="math" aria-label="m_1"></span>, <code>m_2</code> for <span role="math" aria-label="m_2"></span>, <span role="math" aria-label="u"></span>, <code>v_1</code> for <span role="math" aria-label="v_1"></span>, and <code>v_2</code> for <span role="math" aria-label="v_2"></span>.</p>`;
+  const source = "m_2*(m_1+m)*((v_2-v_1)/(m*(m_1+m_2+m)))";
+  const { dom, window } = await createRuntime(problem("astronaut", prompt, source));
+  try {
+    const input = window.document.querySelector("#input_astronaut");
+    const controller = window.__psetterRuntime.controllers.get(input);
+    controller.activate();
+    assert.ok(controller.mathField, controller.lastResult.errors.join(" | "));
+    assert.equal(input.value, source);
+    assert.equal(controller.nativeEquivalentForQa(source), true);
   } finally {
     window.__psetterRuntime?.dispose();
     dom.window.close();
@@ -1396,7 +1546,9 @@ test("unsupported native syntax is not claimed and a later valid native edit is 
 
     input.value = "foo(x,y)";
     input.dispatchEvent(new window.Event("input", { bubbles: true }));
-    assert.ok(controller.mathField, "valid native edit is admitted");
+    assert.equal(controller.mathField, undefined, "native editing remains in control");
+    controller.nativeInputButton.click();
+    assert.ok(controller.mathField, "explicit retry admits the valid edit");
     assert.equal(input.value, "foo(x,y)");
     controller.mathField.moveToRightEnd();
     controller.typeCharacter("+");
@@ -1850,7 +2002,9 @@ test("unknown native syntax leaves the native field editable and keys unclaimed"
     }
     input.value = "(x+1)/(y+2)";
     input.dispatchEvent(new window.Event("input", { bubbles: true }));
-    assert.ok(controller.mathField, "a supported native edit can enter visual mode");
+    assert.equal(controller.mathField, undefined, "native editing does not cause takeover");
+    controller.nativeInputButton.click();
+    assert.ok(controller.mathField, "a supported native edit can be opened explicitly");
     assert.equal(input.value, "(x+1)/(y+2)");
   } finally {
     window.__psetterRuntime?.dispose();
@@ -1881,7 +2035,7 @@ test("variable declarations stay bounded to their list and problem", async () =>
   }
 });
 
-test("unfinished typing stays silent, preserves the native answer, and recovers on completion", async () => {
+test("unfinished typing warns, preserves the native answer, and recovers on completion", async () => {
   const { dom, window } = await createRuntime(problem("draft_feedback", "<p>Find x.</p>", "x"));
   try {
     const input = window.document.querySelector("#input_draft_feedback");
@@ -1890,7 +2044,8 @@ test("unfinished typing stays silent, preserves the native answer, and recovers 
     controller.mathField.moveToRightEnd();
     controller.typeCharacter("+");
     assert.equal(input.value, "x");
-    assert.equal(controller.interactionNotice.hidden, true);
+    assert.equal(controller.interactionNotice.hidden, false);
+    assert.match(controller.interactionMessage.textContent, /Not synced to MITx/);
     assert.equal(controller.interactionNotice.dataset.state, "incomplete");
     const draft = controller.mathField.latex();
     controller.deactivate();
@@ -1985,8 +2140,8 @@ test("an editor runtime fault releases its native field and leaves another field
     assert.equal(controller.mathField, undefined);
     assert.equal(input.classList.contains("pset-math-native-covered"), false);
     assert.equal(input.value, "x");
-    assert.match(controller.interactionMessage.textContent, /using standard input/);
-    assert.match(controller.interactionMessage.textContent, /using standard input/);
+    assert.match(controller.interactionMessage.textContent, /using MITx syntax/);
+    assert.match(controller.interactionMessage.textContent, /using MITx syntax/);
     assert.equal(window.document.activeElement, input, "runtime recovery returns focus to the native input");
     const event = new window.KeyboardEvent("keydown", { key: "1", cancelable: true, bubbles: true });
     input.dispatchEvent(event);
@@ -2018,8 +2173,14 @@ test("rejected native hydration is not retried on every key or focus event", asy
     }
     await new Promise((resolve) => window.setTimeout(resolve, 10));
     assert.equal(attempts, 1);
-    assert.equal(controller.interactionNotice.dataset.state, "native-syntax");
-    assert.equal(controller.interactionNotice.hidden, true, "native input needs no warning");
+    assert.equal(controller.interactionNotice.dataset.state, "native");
+    assert.equal(controller.interactionNotice.hidden, false);
+    assert.equal(controller.interactionMessage.textContent, "Visual editor unavailable for this answer.");
+    assert.equal(controller.nativeInputButton.hidden, true, "don't offer a retry for unchanged syntax");
+    controller.nativeInputButton.click();
+    assert.equal(controller.mathField, undefined, "retry still rejects unsafe syntax");
+    assert.equal(input.value, "x⊕y", "retry preserves the native answer");
+    assert.equal(controller.manualNative, true);
   } finally {
     window.__psetterRuntime?.dispose();
     dom.window.close();
@@ -2065,7 +2226,7 @@ test("sync feedback waits for idle and reuses the reset comment box above the an
     assert.equal(controller.interactionNotice.hidden, false);
     assert.equal(controller.interactionNotice.classList.contains("pset-math-restore-hint"), true);
     assert.match(controller.interactionMessage.textContent, /has not been applied/);
-    assert.equal(controller.nativeInputButton.textContent, "Use standard input");
+    assert.equal(controller.nativeInputButton.textContent, "Use MITx syntax");
     controller.mathField.latex("x+1");
     assert.equal(controller.interactionNotice.hidden, true);
     controller.mathField.latex(String.raw`\operatorname{mystery}(x)`);
@@ -2076,4 +2237,194 @@ test("sync feedback waits for idle and reuses the reset comment box above the an
     window.__psetterRuntime?.dispose();
     dom.window.close();
   }
+});
+
+
+test("native answer callbacks cannot eject an editor during a typed edit", async () => {
+  const { dom, window } = await createRuntime(problem("sync_focus", "<p>Find x.</p>", "x") +
+    '<button id="preview_focus">Preview status</button>');
+  try {
+    const input = window.document.querySelector("#input_sync_focus");
+    const manager = window.__psetterRuntime;
+    input.focus();
+    await new Promise((resolve) => window.setTimeout(resolve, 10));
+    const controller = manager.controllers.get(input);
+    const field = controller.mathField;
+    const textarea = controller.editorSurface.querySelector("textarea");
+    const events = { input: 0, change: 0, keyup: 0 };
+    for (const type of Object.keys(events)) input.addEventListener(type, () => {
+      events[type]++;
+      window.document.querySelector("#preview_focus").focus();
+    });
+    for (const key of "yz") {
+      field.typedText(key);
+      assert.equal(controller.active, true, "native callbacks keep the editing session active");
+      assert.equal(controller.mathField, field, "typing keeps the same MathQuill instance");
+      assert.equal(window.document.activeElement, textarea, "typing keeps keyboard focus");
+    }
+    assert.equal(input.value, "x*y*z");
+    assert.deepEqual(events, { input: 2, change: 2, keyup: 2 });
+    window.document.querySelector("#preview_focus").focus();
+    assert.equal(controller.active, false, "focus outside a native write still closes the editor");
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("native refocus during an answer callback preserves the insertion point", async () => {
+  const { dom, window } = await createRuntime(problem("sync_caret", "<p>Find x.</p>", "x+2"));
+  try {
+    const input = window.document.querySelector("#input_sync_caret");
+    input.focus();
+    await new Promise((resolve) => window.setTimeout(resolve, 10));
+    const controller = window.__psetterRuntime.controllers.get(input);
+    const field = controller.mathField;
+    field.moveToRightEnd().keystroke("Left");
+    input.addEventListener("keyup", () => input.focus());
+    field.typedText("3");
+    await new Promise((resolve) => window.setTimeout(resolve, 10));
+    field.typedText("4");
+    assert.equal(input.value, "x+342");
+    assert.equal(controller.mathField, field);
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("typing before the deferred focus handoff survives native answer callbacks", async () => {
+  const { dom, window } = await createRuntime(problem("early_key", "<p>Find x.</p>", "x") +
+    '<button id="early_preview">Preview status</button>');
+  try {
+    const input = window.document.querySelector("#input_early_key");
+    input.addEventListener("input", () => window.document.querySelector("#early_preview").focus());
+    input.focus();
+    const controller = window.__psetterRuntime.controllers.get(input);
+    input.dispatchEvent(new window.KeyboardEvent("keydown", {
+      key: "y", bubbles: true, cancelable: true,
+    }));
+    assert.equal(controller.active, true);
+    assert.ok(controller.mathField);
+    assert.equal(input.value, "x*y");
+    await new Promise((resolve) => window.setTimeout(resolve, 10));
+    assert.equal(window.document.activeElement, controller.editorSurface.querySelector("textarea"));
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("runtime recovery retains the last visual draft when the editor source getter fails", async () => {
+  const { dom, window } = await createRuntime(problem("fault_draft", "<p>Find x.</p>", "x"));
+  try {
+    const input = window.document.querySelector("#input_fault_draft");
+    const controller = window.__psetterRuntime.controllers.get(input);
+    controller.activate();
+    controller.mathField.moveToRightEnd().typedText("+");
+    const draft = controller.mathField.latex();
+    controller.mathField.latex = () => { throw new Error("simulated source failure"); };
+    controller.recompute();
+    assert.equal(input.value, "x");
+    assert.equal(controller.manualNative, true);
+    controller.nativeInputButton.click();
+    assert.equal(controller.mathField.latex(), draft, "explicit retry recovers the exact unfinished source");
+    controller.mathField.moveToRightEnd().typedText("2");
+    assert.equal(input.value, "x+2");
+  } finally {
+    window.__psetterRuntime?.dispose();
+    dom.window.close();
+  }
+});
+
+test("undo, redo, and original restore remain separate after edits", async () => {
+  const { dom, window } = await createRuntime(problem("recovery", "<p>Find x.</p>", "2*x"));
+  try {
+    const input = window.document.querySelector("#input_recovery");
+    const controller = window.__psetterRuntime.controllers.get(input);
+    controller.activate();
+    controller.mathField.moveToRightEnd();
+    controller.typeCharacter("+");
+    controller.typeCharacter("3");
+    assert.equal(input.value, "2*x+3");
+    assert.equal(controller.restoreControl.hidden, false);
+    controller.undoHistory();
+    assert.equal(input.value, "2*x+3", "incomplete undo must not write a partial answer");
+    assert.equal(controller.interactionNotice.hidden, false);
+    controller.redoHistory();
+    assert.equal(input.value, "2*x+3");
+    controller.restoreOriginal();
+    assert.equal(input.value, "2*x");
+  } finally { window.__psetterRuntime?.dispose(); dom.window.close(); }
+});
+
+test("external changes and form reset do not get overwritten by a visual draft", async () => {
+  const { dom, window } = await createRuntime(`<form>${problem("external", "<p>Find x.</p>", "x")}</form>`);
+  try {
+    const input = window.document.querySelector("#input_external");
+    const controller = window.__psetterRuntime.controllers.get(input);
+    controller.activate();
+    input.value = "42";
+    controller.mathField.moveToRightEnd();
+    controller.typeCharacter("+");
+    controller.typeCharacter("1");
+    assert.equal(input.value, "42");
+    assert.match(controller.interactionMessage.textContent, /Not synced to MITx/);
+    input.form.reset();
+    controller.deactivate();
+    await new Promise((resolve) => window.setTimeout(resolve, 10));
+    assert.equal(input.value, "x");
+  } finally { window.__psetterRuntime?.dispose(); dom.window.close(); }
+});
+
+test("symbol search groups results and does not accumulate scoped listeners", async () => {
+  const { dom, window } = await createRuntime(problem("palette", "<p>Find x.</p>", "x"));
+  try {
+    const input = window.document.querySelector("#input_palette");
+    const controller = window.__psetterRuntime.controllers.get(input);
+    controller.activate();
+    controller.mountDetailsPanel();
+    const count = controller.detailsDisposers.length;
+    for (let i = 0; i < 100; i++) controller.renderPalette(i % 2 ? "sin" : "nothingmatches");
+    assert.equal(controller.detailsDisposers.length, count);
+    controller.renderPalette("nothingmatches");
+    assert.match(controller.paletteGrid.textContent, /No matching symbols/);
+    controller.renderPalette("");
+    assert.match(controller.paletteGrid.textContent, /Common/);
+    assert.match(controller.paletteGrid.textContent, /Functions/);
+    assert.match(controller.paletteGrid.textContent, /Greek and relations/);
+  } finally { window.__psetterRuntime?.dispose(); dom.window.close(); }
+});
+
+
+test("recovery menu offers restore and MITx syntax separately", async () => {
+  const { dom, window } = await createRuntime(problem("menu", "<p>Find x.</p>", "x"));
+  try {
+    const input = window.document.querySelector("#input_menu");
+    const controller = window.__psetterRuntime.controllers.get(input);
+    controller.activate();
+    controller.restoreControl.click();
+    assert.equal(controller.restoreMenu.hidden, false);
+    assert.equal(controller.restoreAction.disabled, false);
+    assert.equal(controller.syntaxAction.textContent, "Use MITx syntax");
+    controller.syntaxAction.click();
+    assert.equal(controller.manualNative, true);
+    assert.equal(input.value, "x");
+  } finally { window.__psetterRuntime?.dispose(); dom.window.close(); }
+});
+
+
+test("unit vector palette buttons write MITx aliases", async () => {
+  const { dom, window } = await createRuntime(problem("unit_vectors", "<p>Find x.</p>"));
+  try {
+    const input = window.document.querySelector("#input_unit_vectors");
+    const controller = window.__psetterRuntime.controllers.get(input);
+    controller.activate();
+    controller.mountDetailsPanel();
+    for (const alias of ["hati", "hatj", "hatk"]) {
+      controller.mathField.latex("");
+      controller.paletteGrid.querySelector(`[data-symbol-id="${alias}"]`).click();
+      assert.equal(input.value, alias);
+    }
+  } finally { window.__psetterRuntime?.dispose(); dom.window.close(); }
 });

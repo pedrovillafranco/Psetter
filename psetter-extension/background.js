@@ -75,7 +75,19 @@ function createFeedbackUrl(version) {
   return url.href;
 }
 
-async function openFeedbackWindow(version) {
+let feedbackWindowPromise;
+
+function openFeedbackWindow(version) {
+  if (feedbackWindowPromise) return feedbackWindowPromise;
+  const operation = openFeedbackWindowOnce(version);
+  feedbackWindowPromise = operation;
+  operation.finally(() => {
+    if (feedbackWindowPromise === operation) feedbackWindowPromise = undefined;
+  }).catch(() => {});
+  return operation;
+}
+
+async function openFeedbackWindowOnce(version) {
   if (!chrome.windows) return null;
   const storedWindowId = await readFeedbackWindowId();
   if (storedWindowId !== undefined) {

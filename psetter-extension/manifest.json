@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Psetter",
   "short_name": "Psetter",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Enter math visually in MITx with Psetter, an intuitive math editor.",
   "minimum_chrome_version": "120",
   "permissions": ["storage"],

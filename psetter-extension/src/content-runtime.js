@@ -590,11 +590,9 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
     if (e.operator === "^")
       return { latex: `${de(t, r + 1)}^{${i.latex}}`, precedence: r };
     if (e.operator === "*")
-      // `\\cdot 10^{n}` is parsed as scientific notation by the bundled
-      // LaTeX reader (its exponent-product token).  Use an explicit `*`
-      // operator when hydrating native MITx syntax so multiplication remains
-      // multiplication and numeric lexical spelling can round-trip safely.
-      return { latex: `${de(t, r)}*${de(i, r + 1)}`, precedence: r };
+      // Use the visual multiplication dot in MathQuill. Conversion normalizes
+      // this command back to `*` before parsing MITx syntax.
+      return { latex: `${de(t, r)}\\cdot ${de(i, r + 1)}`, precedence: r };
     let s =
       {
         "<=": "\\le",
@@ -14472,7 +14470,9 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
         ...psetterMathQuillDefaultOperatorNames,
         ...PSETTER_FUNCTION_NAMES,
       ]),
-    ].filter((name) => /^[A-Za-z]{2,}$/.test(name));
+    // sqrt is a structural MathQuill command, not an operator name. Listing
+    // it in both dictionaries makes the operator recognizer consume it first.
+    ].filter((name) => /^[A-Za-z]{2,}$/.test(name) && name !== "sqrt");
     return operatorNames
       .filter(
         (operatorName) =>
@@ -14558,6 +14558,15 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
     } catch {}
     return null;
   }
+  function psetterContextParserIdentity(name, latex) {
+    // The bundled parser identifies `m_{1}` and `m_{2}` by the same base
+    // symbol (`m`). Give declared indexed variables an operator identity so
+    // they cannot overwrite the plain `m` mapping or each other.
+    const source = /^[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9]+$/.test(name)
+      ? `\\operatorname{${name}}`
+      : latex;
+    return psetterParserIdentity(source);
+  }
   function discoverPsetterSemanticContext(e) {
     let t = qn(e),
       i = new Set(),
@@ -14576,7 +14585,7 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
         i.add(s.outputName);
       authoritativeSymbols.set(s.outputName, s.latex);
       for (let a of [s.latex, s.outputName]) {
-        let l = psetterParserIdentity(a);
+        let l = psetterContextParserIdentity(s.outputName, a);
         l && !n.has(l) && n.set(l, s.outputName);
       }
     }
@@ -14900,7 +14909,10 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
       n.set(a, o);
       return o;
     };
-    let tokenPattern = /\\operatorname\{[A-Za-z][A-Za-z0-9_]*\}(?:_\{?[A-Za-z0-9]+\}?)?|\\[A-Za-z]+(?:_\{?[A-Za-z0-9]+\}?)?|[A-Za-z][A-Za-z0-9_]*(?:_\{?[A-Za-z0-9]+\}?)?/g;
+    // Keep the base identifier from greedily consuming the underscore. If it
+    // does, `m_{t}` is tokenized as `m_` + `t`, so the subscript can be replaced
+    // by a placeholder and leak into the serialized answer (`m_psetterctx…`).
+    let tokenPattern = /\\operatorname\{[A-Za-z][A-Za-z0-9_]*\}(?:_\{?[A-Za-z0-9]+\}?)?|\\[A-Za-z]+(?:_\{?[A-Za-z0-9]+\}?)?|[A-Za-z][A-Za-z0-9]*(?:_\{?[A-Za-z0-9]+\}?)?/g;
     let source = e.replace(tokenPattern, (a) => {
       let l = a
         .replace(/^\\operatorname\{([^{}]+)\}/, "$1")
@@ -14974,7 +14986,10 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
       };
     try {
       let parserSource = restorePsetterAuthoritativeFunctions(
-          e,
+          // A following digit is a new factor after the cursor leaves a
+          // subscript. Without an explicit boundary the parser merges U_{0}2
+          // into the different identifier U_02.
+          e.replace(/(_(?:\{[A-Za-z0-9]+\}|[A-Za-z0-9]))(?=\s*(?:[A-Za-z0-9]|\\(?!(?:cdot|times)\b)[A-Za-z]))/g, "$1\\cdot "),
           semanticContext.functions,
         ),
         metricProtected = protectPsetterNativeMetricAffixes(
@@ -15162,7 +15177,7 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
       };
     for (let n of t?.symbols ?? []) {
       r.authoritativeSymbols.set(n, jn(n));
-      let s = psetterParserIdentity(jn(n));
+      let s = psetterContextParserIdentity(n, jn(n));
       s && r.symbolOverrides.set(s, n);
     }
     return r;
@@ -15221,6 +15236,9 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
       ));
   }
   var Si = [
+      { id: "hati", label: "î", search: "i hat unit vector hati", latex: "\\hat{i}", group: "common" },
+      { id: "hatj", label: "ĵ", search: "j hat unit vector hatj", latex: "\\hat{j}", group: "common" },
+      { id: "hatk", label: "k̂", search: "k hat unit vector hatk", latex: "\\hat{k}", group: "common" },
       {
         id: "pi",
         label: "\u03C0",
@@ -15484,6 +15502,9 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
         ...s.matchAll(
           /(?:type\s+in|enter\s+(?:your\s+)?answer\s+as)\s*["“”']([A-Za-z][A-Za-z0-9_]*)["“”']/gi,
         ),
+        ...(/\bin terms of\b/i.test(s)
+          ? s.matchAll(/\b([A-Za-z]{2,})\s+for\s+[A-Za-z]+\b/gi)
+          : []),
       ];
       for (let l of a) {
         let o = createPsetterContextItem(l[1], {
@@ -16014,6 +16035,7 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
     lastCommittedOutput = "";
     draftExpression = "";
     writingNative = !1;
+    syncingEditorFocus = !1;
     hydratingEditor = !1;
     editorDirty = !1;
     originalTabIndex;
@@ -16082,46 +16104,39 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
         }),
         (t.dataset.psetMathEnhanced = "true"),
         t.insertAdjacentElement("afterend", this.trigger),
-        (this.restoreControl = R("span", "pset-math-restore-control")),
-        this.restoreControl.setAttribute("role", "button"),
-        this.restoreControl.setAttribute("tabindex", "0"),
-        this.restoreControl.setAttribute(
-          "aria-label",
-          "Restore the original answer before Psetter translated it",
-        ),
-        this.restoreControl.setAttribute(
-          "title",
-          "Restore the original answer",
-        ),
-        (() => {
-          let s = document.createElementNS("http://www.w3.org/2000/svg", "svg"),
-            a = document.createElementNS("http://www.w3.org/2000/svg", "path");
-          s.setAttribute("viewBox", "0 0 24 24");
-          s.setAttribute("aria-hidden", "true");
-          s.setAttribute("focusable", "false");
-          a.setAttribute("d", "M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3");
-          s.appendChild(a);
-          this.restoreControl.appendChild(s);
-        })(),
-        (this.restoreControl.hidden = !0),
-        this.listen(this.restoreControl, "mousedown", (s) => {
-          s.preventDefault();
-          s.stopPropagation();
+        (this.restoreControl = Be("Restore", "pset-math-restore-control", "Restore the original MITx answer")),
+        this.restoreControl.setAttribute("aria-haspopup", "true"),
+        this.restoreControl.setAttribute("aria-expanded", "false"),
+        (this.restoreMenu = R("span", "pset-math-recovery-menu")),
+        (this.restoreMenu.hidden = !0),
+        (this.restoreAction = Be("Restore original answer", "pset-math-recovery-option", "Restore original answer")),
+        (this.syntaxAction = Be("Use MITx syntax", "pset-math-recovery-option", "Use MITx syntax")),
+        this.restoreMenu.append(this.restoreAction, this.syntaxAction),
+        (this.recoveryWrap = R("span", "pset-math-recovery-wrap")),
+        this.recoveryWrap.append(this.restoreControl, this.restoreMenu),
+        this.trigger.insertAdjacentElement("afterend", this.recoveryWrap),
+        this.listen(this.recoveryWrap, "mousedown", (event) => event.preventDefault()),
+        this.listen(this.restoreControl, "click", () => {
+          this.restoreMenu.hidden = !this.restoreMenu.hidden;
+          this.restoreControl.setAttribute("aria-expanded", String(!this.restoreMenu.hidden));
         }),
-        this.listen(this.restoreControl, "click", (s) => {
-          s.preventDefault();
-          s.stopPropagation();
-          if (!this.isCurrent()) return;
+        this.listen(this.restoreAction, "click", () => {
+          this.restoreMenu.hidden = !0;
+          this.restoreControl.setAttribute("aria-expanded", "false");
           this.restoreOriginal();
         }),
-        this.listen(this.restoreControl, "keydown", (s) => {
-          if (s.key !== "Enter" && s.key !== " ") return;
-          s.preventDefault();
-          s.stopPropagation();
-          if (!this.isCurrent()) return;
-          this.restoreOriginal();
+        this.listen(this.syntaxAction, "click", () => {
+          this.restoreMenu.hidden = !0;
+          this.restoreControl.setAttribute("aria-expanded", "false");
+          this.nativeInputButton.click();
         }),
-        this.trigger.insertAdjacentElement("afterend", this.restoreControl),
+        this.listen(this.recoveryWrap, "keydown", (event) => {
+          if (event.key !== "Escape") return;
+          this.restoreMenu.hidden = !0;
+          this.restoreControl.setAttribute("aria-expanded", "false");
+          this.restoreControl.focus();
+          event.stopPropagation();
+        }),
         (this.interactionNotice = R("div", "pset-math-restore-hint pset-math-interaction-notice")),
         (this.interactionNotice.id = `psetter-sync-hint-${++psetterSyncHintId}`),
         this.interactionNotice.setAttribute("role", "group"),
@@ -16129,17 +16144,20 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
         (this.interactionMessage = R("span")),
         this.interactionMessage.setAttribute("role", "status"),
         this.interactionMessage.setAttribute("aria-live", "polite"),
-        (this.nativeInputButton = Be("Use standard input", "pset-math-native-entry", "Use standard input")),
+        (this.nativeInputButton = Be("Use MITx syntax", "pset-math-native-entry", "Use MITx syntax")),
         this.listen(this.nativeInputButton, "click", () => {
           if (this.manualNative) {
+            if (this.failedNativeValue === this.input.value) return;
             this.manualNative = !1;
+            this.failedNativeValue = null;
+            this.inlineEnabled = !0;
             this.enableInline();
           } else {
             this.manualNative = !0;
             this.disableInline();
             this.input.focus();
           }
-          this.renderInteractionFeedback();
+          this.renderControls();
         }),
         this.interactionNotice.append(this.interactionMessage, this.nativeInputButton),
         (this.interactionNotice.hidden = !0),
@@ -16155,7 +16173,7 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
         (this.restoreHint = R(
           "div",
           "pset-math-restore-hint",
-          "Think Psetter got it wrong? Click here to restore.",
+          "Open Restore to recover the original answer.",
         )),
         this.restoreHint.setAttribute("role", "status"),
         this.restoreHint.setAttribute("aria-hidden", "true"),
@@ -16171,21 +16189,40 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
           this.endNativeInputTurn();
         }),
         this.formElement && this.listen(this.formElement, "submit", this.formSubmitListener),
-        this.formElement && this.listen(this.formElement, "reset", () => this.endNativeInputTurn()),
+        this.formElement && this.listen(this.formElement, "reset", (event) => {
+          this.resetPending = !0;
+          window.setTimeout(() => {
+            this.resetPending = !1;
+            if (!this.isCurrent() || event.defaultPrevented) return;
+            this.pendingDraft = void 0;
+            this.hooks.clearEditorState?.(this.input);
+            this.restoreAvailable = !1;
+            this.externalConflict = !1;
+            this.lastCommittedOutput = this.input.value;
+            this.draftExpression = this.input.value;
+            if (this.mathField) this.hydrateNativeSource(this.input.value);
+            this.renderControls();
+            this.endNativeInputTurn();
+          }, 0);
+        }),
         this.listen(t, "focus", () => {
           if (!this.isCurrent()) return;
+          if (this.syncingEditorFocus) return;
           (this.hooks.requestActivation(this), this.scheduleMathFieldFocus());
         }),
         this.listen(t, "keydown", (s) => this.handleNativeKeydown(s)),
         (this.externalInputListener = () => {
           if (!this.isCurrent()) return;
           if (this.writingNative || !this.active) return;
+          this.externalConflict = !1;
+          this.restoreAvailable = !1;
           if (this.pendingDraft && this.pendingDraft.nativeOutput !== this.input.value) {
             this.pendingDraft = void 0;
             this.hooks.clearEditorState?.(this.input);
           }
           if (!this.mathField) {
             this.draftExpression = this.input.value;
+            if (this.manualNative) this.renderInteractionFeedback();
             if (this.inlineEnabled && !this.manualNative) this.mountInlineEditor();
             return;
           }
@@ -16249,7 +16286,7 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
         this.editorSurface,
         this.interactionNotice,
         this.detailsMount,
-        this.restoreControl,
+        this.recoveryWrap,
       ].some((i) => {
         if (!i) return !1;
         try {
@@ -16330,8 +16367,6 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
         this.mathField || this.mountInlineEditor();
         if (this.mathField) {
           this.mathField.focus();
-          typeof this.mathField.moveToRightEnd == "function" &&
-            this.mathField.moveToRightEnd();
         }
       }), 0);
     }
@@ -16355,6 +16390,7 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
       let i = !1;
       if (t.key.length === 1 && !t.ctrlKey && !t.metaKey && !t.altKey)
         (this.clearActivationRestore(),
+          this.mathField.focus(),
           this.mathField.typedText
           ? this.mathField.typedText(t.key)
           : this.mathField.write(t.key),
@@ -16373,7 +16409,7 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
         }[t.key];
         r &&
           typeof this.mathField.keystroke == "function" &&
-          (this.clearActivationRestore(), this.mathField.keystroke(r), (i = !0));
+          (this.clearActivationRestore(), this.mathField.focus(), this.mathField.keystroke(r), (i = !0));
       }
       i &&
         (t.preventDefault(),
@@ -16427,7 +16463,6 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
             "phi",
             "omega",
             "sqrt",
-            "sum",
           ].join(" "),
           autoOperatorNames: psetterMathQuillOperatorNames(this.semanticContext),
           handlers: {
@@ -16524,8 +16559,16 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
           status: "unsupported",
           isSupported: !1,
         };
+        this.manualNative = !0;
+        this.inlineEnabled = !1;
         this.unmountInlineEditor();
+        // This was an unsuccessful attempt to open native text, not a
+        // visual draft that should be restored on the next attempt.
+        this.pendingDraft = void 0;
+        this.hooks.clearEditorState?.(this.input);
+        this.renderControls();
         this.renderInteractionFeedback();
+        this.input.focus({ preventScroll: true });
         return;
       }
       this.semanticContext = r.context;
@@ -16544,11 +16587,13 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
     }
     unmountInlineEditor() {
       if (this.mathField && this.lastResult.status !== "safe") {
-        try {
-          this.pendingDraft = { latex: this.mathField.latex(), nativeOutput: this.input.value,
-            context: this.semanticContext, kind: "draft" };
-          this.hooks.writeEditorState?.(this.input, this.pendingDraft);
-        } catch {}
+        // The source getter can be the operation that failed. Keep the last
+        // captured visual source instead of reparsing a partial native draft.
+        let latex = this.lastEditorLatex;
+        try { latex = this.mathField.latex(); } catch {}
+        this.pendingDraft = { latex, nativeOutput: this.input.value,
+          context: this.semanticContext, kind: "draft" };
+        try { this.hooks.writeEditorState?.(this.input, this.pendingDraft); } catch {}
       }
       this.lifecycleGeneration += 1;
       this.clearScoped(this.inlineDisposers);
@@ -16608,7 +16653,14 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
       return { safe: !1, value: this.lastCommittedOutput };
     }
     writeNativeValue(t) {
-      if (!this.isCurrent()) return;
+      if (!this.isCurrent() || this.resetPending) return;
+      if (this.input.value !== this.lastCommittedOutput) {
+        this.externalConflict = !0;
+        this.restoreAvailable = !1;
+        this.renderRestoreControl();
+        this.renderInteractionFeedback();
+        return;
+      }
       let i = this.mathField?.latex?.() ?? "";
       t = restorePsetterMultiLetterSymbols(i, t, this.semanticContext.aliases);
       t = restorePsetterMultiLetterSymbols(
@@ -16627,11 +16679,25 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
         (t === this.lastCommittedOutput && this.input.value === t)
       )
         return;
+      const field = this.mathField;
+      this.syncingEditorFocus = !!field &&
+        (document.activeElement === this.input ||
+          !!this.editorSurface?.contains(document.activeElement));
       this.writingNative = !0;
       try {
         ((this.lastCommittedOutput = t), Bn(this.input, t));
       } finally {
         this.writingNative = !1;
+        try {
+          // Native answer listeners can move focus while processing our
+          // events. Keep the same editor and insertion point during typing.
+          if (this.syncingEditorFocus && this.isCurrent() && this.active &&
+              this.mathField === field &&
+              !this.editorSurface?.contains(document.activeElement))
+            field.focus();
+        } finally {
+          this.syncingEditorFocus = !1;
+        }
       }
     }
     commitNativeValue() {
@@ -16685,8 +16751,9 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
         (this.restoreHintCounted = !1),
         (this.activationPending = !0),
         (this.editorDirty = !1),
+        (this.externalConflict = !1),
         // Keep the recovery affordance available for the entire activation
-        // session. It is cleared only by an explicit edit, restore, or submit.
+        // session. It is cleared by restore, external changes, or submit.
         (this.restoreAvailable = this.activationOriginalValue.length > 0),
         this.renderRestoreControl(),
         this.input.value !== this.lastCommittedOutput &&
@@ -16730,10 +16797,16 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
       this.renderInteractionFeedback();
     }
     renderRestoreControl() {
-      let t =
-        this.active &&
-        this.restoreAvailable &&
-        this.activationOriginalValue.length > 0;
+      let t = this.active;
+      if (this.restoreAction) this.restoreAction.disabled = !this.restoreAvailable;
+      if (this.syntaxAction) {
+        this.syntaxAction.textContent = this.manualNative ? "Resume visual editor" : "Use MITx syntax";
+        this.syntaxAction.disabled = this.manualNative && this.failedNativeValue === this.input.value;
+      }
+      if (!t && this.restoreMenu) {
+        this.restoreMenu.hidden = !0;
+        this.restoreControl.setAttribute("aria-expanded", "false");
+      }
       this.restoreControl &&
         ((this.restoreControl.hidden = !t),
           this.restoreControl.classList.toggle(
@@ -16742,13 +16815,12 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
           ),
           this.restoreControl.setAttribute(
             "aria-hidden",
-            this.active && this.restoreAvailable ? "false" : "true",
+            t ? "false" : "true",
           )),
         !t && this.hideRestoreHint();
     }
     clearActivationRestore() {
-      this.restoreAvailable &&
-        ((this.restoreAvailable = !1), this.hideRestoreHint(), this.renderRestoreControl());
+      this.hideRestoreHint();
     }
     positionRestoreHint() {
       if (!this.restoreHint || !this.restoreControl || this.restoreControl.hidden)
@@ -16805,7 +16877,7 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
       if (i === "z") {
         t.preventDefault();
         t.stopPropagation();
-        t.shiftKey ? this.redoHistory() : this.restoreAvailable ? this.restoreOriginal() : this.undoHistory();
+        t.shiftKey ? this.redoHistory() : this.undoHistory();
       } else if (i === "y" && !t.metaKey) {
         t.preventDefault();
         t.stopPropagation();
@@ -16832,7 +16904,8 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
         this.historyApplying = !1;
       }
       this.editorDirty = !0;
-      this.recompute();
+      this.historyApplying = !0;
+      try { this.recompute(); } finally { this.historyApplying = !1; }
       this.mathField.focus();
     }
     undoHistory() {
@@ -16849,6 +16922,13 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
     restoreOriginal() {
       if (!this.isCurrent() || !this.restoreAvailable || typeof this.activationOriginalValue != "string")
         return;
+      if (this.input.value !== this.lastCommittedOutput) {
+        this.externalConflict = !0;
+        this.restoreAvailable = !1;
+        this.renderRestoreControl();
+        this.renderInteractionFeedback();
+        return;
+      }
       let t = this.activationOriginalValue;
       this.hooks.clearEditorState?.(this.input);
       ((this.restoreAvailable = !1),
@@ -16877,7 +16957,7 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
         this.operationCountTimer && window.clearTimeout(this.operationCountTimer),
         this.input.removeAttribute("data-pset-math-enhanced"),
         this.trigger.remove(),
-        this.restoreControl?.remove(),
+        this.recoveryWrap?.remove(),
         this.interactionNotice?.remove(),
         this.restoreHintPositionFrame &&
           window.cancelAnimationFrame(this.restoreHintPositionFrame),
@@ -16914,9 +16994,9 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
       let t = R("div", "pset-math-details"),
         w = this.semanticContext?.items ?? qn(this.input),
         visibleContext = w.slice(0, 12);
-      this.settings.remoteFeatures?.contextSymbols !== !1 &&
-        visibleContext.length > 0 &&
-        t.appendChild(this.buildSymbolSection("From this question", visibleContext));
+      const contextSection = this.settings.remoteFeatures?.contextSymbols !== !1 &&
+        visibleContext.length > 0
+        ? this.buildSymbolSection("From this problem", visibleContext) : null;
       (w.length === 0 || this.settings.remoteFeatures?.contextSymbols === !1) &&
         t.classList.add("pset-math-no-context");
       let z = R("div", "pset-math-palette-header"),
@@ -16944,7 +17024,11 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
         }),
         (this.paletteSearch = ee),
         z.append(ue, ee));
-        let re = R("div", "pset-math-symbol-grid");
+        let re = R("div", "pset-math-palette-groups");
+      let scroll = R("div", "pset-math-symbol-scroll");
+      scroll.setAttribute("tabindex", "0");
+      scroll.setAttribute("aria-label", "Symbols");
+      scroll.append(...(contextSection ? [contextSection] : []), re);
       let ie = R("div", "pset-math-brand-footer"),
         pe = R("img", "pset-math-brand-logo"),
         de = R("span", "pset-math-brand-name", "Psetter™"),
@@ -16968,7 +17052,8 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
       ie.append(pe, de, ve, ae);
       return (
         (this.paletteGrid = re),
-        t.append(z, re, ie),
+        (this.paletteScroll = scroll),
+        t.append(z, scroll, ie),
         this.setSymbolsOpen(this.symbolsOpen),
         (() => {
           let n = this.lifecycleGeneration;
@@ -16984,9 +17069,9 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
     }
     setSymbolsOpen(t, i = !1) {
       ((this.symbolsOpen = !!t),
-        this.paletteGrid &&
-          ((this.paletteGrid.hidden = !this.symbolsOpen),
-            this.paletteGrid.setAttribute(
+        this.paletteScroll &&
+          ((this.paletteScroll.hidden = !this.symbolsOpen),
+            this.paletteScroll.setAttribute(
               "aria-hidden",
               this.symbolsOpen ? "false" : "true",
             )),
@@ -17024,7 +17109,7 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
       }
       return (
         (i.dataset.symbolId = t.id),
-        this.listenScoped(this.detailsDisposers, i, "click", () => this.insertSymbol(t)),
+        i.addEventListener("click", () => this.insertSymbol(t)),
         i
       );
     }
@@ -17035,9 +17120,19 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
           (n) =>
             !i || `${n.label} ${n.search} ${n.id}`.toLowerCase().includes(i),
         );
-      this.paletteGrid.replaceChildren(
-        ...r.map((n) => this.buildSymbolButton(n)),
-      );
+      const functions = new Set(["sqrt", "abs", "exp", "sin", "cos", "tan", "ln", "log"]);
+      const groups = [
+        ["Common", (n) => n.group === "common" && !functions.has(n.id)],
+        ["Functions", (n) => functions.has(n.id)],
+        ["Greek and relations", (n) => n.group === "greek" || n.group === "relations"],
+      ];
+      this.paletteGrid.replaceChildren(...(r.length ? groups.flatMap(([label, matches]) => {
+        const items = r.filter(matches);
+        if (!items.length) return [];
+        const section = this.buildSymbolSection(label, items);
+        section.className = "pset-math-palette-section";
+        return [section];
+      }) : [R("p", "pset-math-empty", "No matching symbols.")]));
     }
     insertSymbol(t) {
       return this.guardEditor(() => this.insertSymbolUnchecked(t));
@@ -17096,6 +17191,8 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
       // leave the cursor outside the intended structure.
       (t.kind === "context"
         ? n()
+        : ["hati", "hatj", "hatk"].includes(t.id)
+        ? this.mathField.typedText(t.id)
         : t.id === "plus"
         ? this.mathField.typedText("+")
         : t.id === "abs"
@@ -17120,10 +17217,10 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
     }
     recomputeUnchecked(t = !0) {
       if (!this.mathField || !this.isCurrent()) return;
-      let i = this.mathField.latex(),
-        r = this.getDraftValue(i),
-        n = Rn(i, this.mode, this.semanticContext);
+      let i = this.mathField.latex();
       this.lastEditorLatex = i;
+      let r = this.getDraftValue(i),
+        n = Rn(i, this.mode, this.semanticContext);
       if (n.issueKind === "runtime") throw new Error("Conversion runtime failed.");
       if (this.activationPending) {
         this.activationBaselineLatex = i;
@@ -17219,6 +17316,7 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
     endNativeInputTurn() {
       if (!this.manualNative) return;
       this.manualNative = !1;
+      this.failedNativeValue = null;
       this.inlineEnabled = this.settings?.inlineEnabledDefault !== false;
       this.interactionFeedbackKey = "";
       this.hideInteractionHint();
@@ -17252,19 +17350,29 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
       if (!this.interactionNotice) return;
       const feedback = psetterInteractionFeedback(this.lastResult, latex);
       this.interactionNotice.dataset.state = this.manualNative ? "native" : feedback.kind;
-      this.interactionMessage.textContent = this.manualNative
-        ? "You are using standard input."
-        : "This edit has not been applied to your MITx answer.";
-      this.nativeInputButton.textContent = this.manualNative ? "Resume visual editor" : "Use standard input";
+      this.interactionMessage.textContent = this.externalConflict && !this.manualNative
+        ? "Not synced to MITx. The MITx answer changed outside Psetter. Use MITx syntax to review it."
+        : this.manualNative
+        ? feedback.kind === "native-syntax"
+          ? "Visual editor unavailable for this answer."
+          : "You are using MITx syntax."
+        : "Not synced to MITx. This edit has not been applied to your MITx answer.";
+      this.nativeInputButton.textContent = this.manualNative
+        ? feedback.kind === "native-syntax" ? "Try visual editor again" : "Resume visual editor"
+        : "Use MITx syntax";
       this.nativeInputButton.setAttribute("aria-label", this.nativeInputButton.textContent);
-      const key = `${this.active}:${this.manualNative}:${feedback.kind}:${latex}`;
+      this.nativeInputButton.disabled = this.manualNative &&
+        feedback.kind === "native-syntax" && this.failedNativeValue === this.input.value;
+      this.nativeInputButton.hidden = this.nativeInputButton.disabled;
+      const key = `${this.active}:${this.manualNative}:${this.externalConflict}:${feedback.kind}:${latex}:${this.manualNative && feedback.kind === "native-syntax" ? this.input.value : ""}`;
       if (key === this.interactionFeedbackKey) return;
       this.interactionFeedbackKey = key;
       if (this.interactionTimer) window.clearTimeout(this.interactionTimer);
       this.interactionTimer = void 0;
       this.hideInteractionHint();
-      if (!this.active || this.disposed || !this.manualNative &&
-          ["ready", "incomplete", "native-syntax"].includes(feedback.kind)) return;
+      if (!this.active || this.disposed || !this.manualNative && !this.externalConflict &&
+          ["ready", "native-syntax"].includes(feedback.kind)) return;
+      if (this.externalConflict || !this.manualNative && feedback.kind === "incomplete") { this.showInteractionHint(); return; }
       if (this.manualNative) { this.showInteractionHint(); return; }
       this.interactionTimer = window.setTimeout(() => {
         this.interactionTimer = void 0;
@@ -17585,6 +17693,7 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
       }
       for (let t of document.querySelectorAll([
         ".pset-math-trigger",
+        ".pset-math-recovery-wrap",
         ".pset-math-restore-control",
         ".pset-math-restore-hint",
         ".pset-math-interaction-notice",
@@ -17986,6 +18095,7 @@ import { psetterInteractionFeedback } from "./interaction-policy.js";
       });
       this.listen(document, "focusin", (t) => {
         this.activeController &&
+          !this.activeController.syncingEditorFocus &&
           !this.isGlobalToggleTarget(t.target) &&
           !isPsetterDetailsEvent(t) &&
           !this.activeController.ownsEvent(t) &&

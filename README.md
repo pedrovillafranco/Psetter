@@ -9,6 +9,10 @@ Fractions, roots, exponents, functions, symbols, and complex expressions can be
 entered as they look, making math input faster and more intuitive. Parsing and
 conversion happen locally in your browser.
 
+MITx unit-vector names `hati`, `hatj`, and `hatk` can be typed as
+contiguous names and are sent to MITx as such. The editor currently displays
+those typed names as letters rather than drawing hats over the vectors.
+
 This repository contains the complete source code for the Psetter browser
 extension, including its build scripts and tests. Original Psetter code is licensed under
 the MIT License. Bundled third-party components remain under their respective

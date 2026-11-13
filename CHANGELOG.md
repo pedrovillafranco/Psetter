@@ -1,6 +1,13 @@
 # Changelog
 
-## 0.1.4 (Unreleased)
+## 0.1.5 (Unreleased)
+
+- Warn when an editor draft is not synced to MITx.
+- Keep restore and undo actions separate and protect external answer changes.
+- Add a per-answer MITx syntax option and organize the scrollable symbols panel.
+- Add unit vector symbols for hati, hatj, and hatk.
+
+## 0.1.4
 
 - Kept incomplete typing silent and reused the reset comment box above the answer after typing stops.
 - Underlined the native-input action, scoped it to one answer submission, and fixed the logo URL in the browser demo.

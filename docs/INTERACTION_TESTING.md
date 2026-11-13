@@ -32,6 +32,8 @@ The automatic checks require the following:
 - Activation and deactivation do not rewrite an unchanged answer or emit answer events.
 - A completed expression remains editable after the editor is reopened.
 - Each native write emits the expected input, change, and keyup events.
+- Page callbacks during those events keep the active editor and insertion point.
+- Runtime recovery retains the last visual draft if its source getter fails.
 - Unsupported or ambiguous notation does not overwrite the native answer.
 - Unsupported existing syntax leaves the native field editable and keyboard events available.
 - Declared names stay atomic. Explicit multiplication stays multiplication.
